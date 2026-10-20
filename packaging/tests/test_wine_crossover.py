@@ -191,6 +191,42 @@ class WineCrossOverScripts(unittest.TestCase):
         self.assertIn("make install-lib", r.stdout)
         self.assertIn("check-deps.sh", r.stdout)
 
+    # A fake runner: wine sleeps through the prefix install and never shows a
+    # window, wineserver exits at once
+    def fake_runner(self, boot_secs=0, boot_rc=0):
+        root = self.work / "runner"
+        write(root / "bin/wine", f"""#!/bin/sh
+case "$1" in
+    --version) echo "wine-11.0 (fake)" ;;
+    wineboot) sleep {boot_secs}; exit {boot_rc} ;;
+    winecfg) sleep 10 ;;
+esac
+""", 0o755)
+        write(root / "bin/wineserver", "#!/bin/sh\nexit 0\n", 0o755)
+        return root
+
+    def test_boot_check_times_out_when_no_window_shows(self):
+        out = self.work / "boot"
+        r = run("sh", SCRIPTS / "boot-check.sh", self.fake_runner(), out, 1)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("prefix initialized", r.stdout)
+        self.assertIn("no winecfg window within 1 s", r.stderr)
+        self.assertIn("result=timeout limit=1", (out / "boot.txt").read_text())
+
+    def test_boot_check_fails_when_prefix_init_overruns_its_limit(self):
+        out = self.work / "boot"
+        r = run("sh", SCRIPTS / "boot-check.sh", self.fake_runner(boot_secs=10), out, 1, 1)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("did not finish within 1 s", r.stderr)
+        self.assertIn("result=init-timeout init_limit=1", (out / "boot.txt").read_text())
+
+    def test_boot_check_reports_an_init_failure(self):
+        out = self.work / "boot"
+        r = run("sh", SCRIPTS / "boot-check.sh", self.fake_runner(boot_rc=3), out, 1)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("initialization exited 3", r.stderr)
+        self.assertIn("result=init-failed rc=3", (out / "boot.txt").read_text())
+
 
 class ManifestEntry(unittest.TestCase):
 

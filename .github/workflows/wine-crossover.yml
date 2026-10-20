@@ -95,7 +95,7 @@ jobs:
       - name: Scan the archive for Game Porting Toolkit files
         run: sh packaging/redist-scan.sh out/*-x86_64.tar.xz
 
-      - name: Boot winecfg in a fresh prefix
+      - name: Initialize a fresh prefix and boot winecfg
         run: |
           mkdir -p "$RUNNER_TEMP/runner"
           tar -xJf out/*-x86_64.tar.xz -C "$RUNNER_TEMP/runner"
