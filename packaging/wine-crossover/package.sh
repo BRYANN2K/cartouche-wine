@@ -29,6 +29,7 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 root="$stage/$name"
 mkdir -p "$root" "$out"
+out=$(cd "$out" && pwd -P)
 cp -R "$install/." "$root/"
 
 # The notices travel with the binaries
