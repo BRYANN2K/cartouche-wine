@@ -81,7 +81,6 @@ run "$src/sources/wine/configure" \
     --with-freetype \
     --with-gnutls \
     --with-opencl \
-    --with-opengl \
     --with-sdl \
     --with-vulkan \
     --without-alsa --without-capi --without-dbus --without-fontconfig --without-gphoto \
