@@ -523,6 +523,13 @@ class Pins(unittest.TestCase):
         self.assertTrue(pins["WINE_GECKO_X86_64_URL"].endswith(f"/{gecko}/wine-gecko-{gecko}-x86_64.tar.xz"))
         self.assertTrue(pins["CX_SOURCE_URL"].endswith(f"crossover-sources-{pins['CX_VERSION']}.tar.gz"))
 
+    def test_workflow_actions_are_pinned_by_commit_with_their_version(self):
+        workflow = (ROOT / ".github/workflows/wine-crossover.yml").read_text()
+        uses = [line.split("uses:", 1)[1].strip() for line in workflow.splitlines() if "uses:" in line]
+        self.assertTrue(uses)
+        for use in uses:
+            self.assertRegex(use, r"^actions/[a-z-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$")
+
 
 if __name__ == "__main__":
     unittest.main()
