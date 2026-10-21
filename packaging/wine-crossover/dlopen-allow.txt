@@ -16,3 +16,7 @@ libGLESv2*.dylib            # no EGL on macOS
 # Optional at run time: the caller works without them
 libodbc*.dylib              # odbc32 uses a driver manager only if the user has one
 libvulkan*.dylib            # SDL3 and winevulkan try a Vulkan loader, then MoltenVK
+libsteam_api.dylib          # SDL3's optional Steam Controller hook, used only inside a Steam game
+
+# Supplied by the user, never redistributed
+libd3dshared.dylib          # D3DMetal from the user's Game Porting Toolkit (CX_APPLEGPTK_LIBD3DSHARED_PATH)
