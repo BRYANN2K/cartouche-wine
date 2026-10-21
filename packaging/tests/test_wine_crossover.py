@@ -66,6 +66,9 @@ class WineCrossOverScripts(unittest.TestCase):
         write(install / "share/wine/wine.inf", "[Version]\n")
         for arch in ("x86_64-windows", "i386-windows"):
             write(install / "lib/wine" / arch / "ntdll.dll", f"MZ {arch}\n")
+        write(install / "share/wine/mono/wine-mono-10.4.1/support/winemono-support.msi", "msi\n")
+        for arch in ("x86", "x86_64"):
+            write(install / f"share/wine/gecko/wine-gecko-2.47.4-{arch}/xul.dll", f"MZ {arch}\n")
         stub = self.work / "sdl.c"
         stub.write_text('int SDL_Init(unsigned f) { return 0; }\n'
                         'const char *SDL_GetError(void) { return ""; }\n'
@@ -147,6 +150,18 @@ class WineCrossOverScripts(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.strip().splitlines()[-1], "wine-11.0 (fake)")
 
+    def test_verify_requires_the_bundled_mono_and_gecko(self):
+        tarball, pins = self.fake_sources()
+        install = self.fake_install()
+        shutil.rmtree(install / "share/wine/gecko/wine-gecko-2.47.4-x86_64")
+        out = self.work / "out"
+        env = dict(os.environ, PINS_FILE=str(pins))
+        r = run("sh", SCRIPTS / "package.sh", install, tarball, out, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.0-2-x86_64.tar.xz", env=env)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("share/wine/gecko/wine-gecko-2.47.4-x86_64/xul.dll is missing", r.stderr)
+
     def test_sdl_check_requires_the_runtime_loaded_sdl3(self):
         install = self.fake_install()
         (install / "lib/libSDL3.dylib").unlink()
@@ -204,16 +219,21 @@ class WineCrossOverScripts(unittest.TestCase):
                      "-Wl,-rpath,@loader_path/../../", "-mmacosx-version-min=15.0"):
             self.assertIn(flag, configure)
         self.assertIn("make install-lib", r.stdout)
+        for tarball in ("wine-mono-10.4.1-x86.tar.xz", "wine-gecko-2.47.4-x86.tar.xz",
+                        "wine-gecko-2.47.4-x86_64.tar.xz"):
+            self.assertIn(tarball, r.stdout)
+        self.assertIn("install/share/wine/mono", r.stdout)
+        self.assertIn("install/share/wine/gecko", r.stdout)
         self.assertIn("check-deps.sh", r.stdout)
 
     # A fake runner: wine sleeps through the prefix install and never shows a
     # window, wineserver exits at once
-    def fake_runner(self, boot_secs=0, boot_rc=0):
+    def fake_runner(self, boot_secs=0, boot_rc=0, mono="mono runtime is at Z:\\wine\\mono"):
         root = self.work / "runner"
         write(root / "bin/wine", f"""#!/bin/sh
 case "$1" in
     --version) echo "wine-11.0 (fake)" ;;
-    wineboot) sleep {boot_secs}; exit {boot_rc} ;;
+    wineboot) echo 'trace:mscoree:install_wine_mono {mono}' >&2; sleep {boot_secs}; exit {boot_rc} ;;
     winecfg) sleep 10 ;;
 esac
 """, 0o755)
@@ -227,6 +247,13 @@ esac
         self.assertIn("prefix initialized", r.stdout)
         self.assertIn("no winecfg window within 1 s", r.stderr)
         self.assertIn("result=timeout limit=1", (out / "boot.txt").read_text())
+
+    def test_boot_check_fails_when_wineboot_would_download_mono(self):
+        out = self.work / "boot"
+        r = run("sh", SCRIPTS / "boot-check.sh", self.fake_runner(mono="mono runtime not found"), out, 1)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("did not use the bundled Wine Mono", r.stderr)
+        self.assertIn("result=addon-download", (out / "boot.txt").read_text())
 
     def test_boot_check_fails_when_prefix_init_overruns_its_limit(self):
         out = self.work / "boot"
@@ -272,10 +299,16 @@ class Pins(unittest.TestCase):
     def test_pins_are_full_hashes_and_https(self):
         pins = dict(line.split("=", 1) for line in (SCRIPTS / "pins.env").read_text().splitlines()
                     if line and not line.startswith("#"))
-        for key in ("CX_SOURCE_SHA256", "LLVM_MINGW_SHA256"):
+        for key in ("CX_SOURCE_SHA256", "LLVM_MINGW_SHA256", "WINE_MONO_SHA256", "WINE_GECKO_X86_SHA256",
+                    "WINE_GECKO_X86_64_SHA256"):
             self.assertRegex(pins[key], r"^[0-9a-f]{64}$")
-        for key in ("CX_SOURCE_URL", "LLVM_MINGW_URL"):
+        for key in ("CX_SOURCE_URL", "LLVM_MINGW_URL", "WINE_MONO_URL", "WINE_GECKO_X86_URL",
+                    "WINE_GECKO_X86_64_URL"):
             self.assertTrue(pins[key].startswith("https://"))
+        mono, gecko = pins["WINE_MONO_VERSION"], pins["WINE_GECKO_VERSION"]
+        self.assertTrue(pins["WINE_MONO_URL"].endswith(f"/{mono}/wine-mono-{mono}-x86.tar.xz"))
+        self.assertTrue(pins["WINE_GECKO_X86_URL"].endswith(f"/{gecko}/wine-gecko-{gecko}-x86.tar.xz"))
+        self.assertTrue(pins["WINE_GECKO_X86_64_URL"].endswith(f"/{gecko}/wine-gecko-{gecko}-x86_64.tar.xz"))
         self.assertTrue(pins["CX_SOURCE_URL"].endswith(f"crossover-sources-{pins['CX_VERSION']}.tar.gz"))
 
 
