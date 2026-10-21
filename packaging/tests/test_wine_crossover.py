@@ -226,48 +226,89 @@ class WineCrossOverScripts(unittest.TestCase):
         self.assertIn("install/share/wine/gecko", r.stdout)
         self.assertIn("check-deps.sh", r.stdout)
 
-    # A fake runner: wine sleeps through the prefix install and never shows a
-    # window, wineserver exits at once
-    def fake_runner(self, boot_secs=0, boot_rc=0, mono="mono runtime is at Z:\\wine\\mono"):
-        root = self.work / "runner"
-        write(root / "bin/wine", f"""#!/bin/sh
+
+def fake_runner(work, boot_secs=0, boot_rc=0, mono="mono runtime is at Z:\\wine\\mono", registry=True,
+                cmd="Microsoft Windows 10.0.19045"):
+    """A runner whose wine sleeps through the prefix install, writes the registry,
+    answers cmd and reg, and never shows a window; wineserver exits at once."""
+    root = work / "runner"
+    hives = "for f in system.reg user.reg userdef.reg; do echo WINE > \"$WINEPREFIX/$f\"; done" if registry else ":"
+    write(root / "bin/wine", f"""#!/bin/sh
 case "$1" in
     --version) echo "wine-11.0 (fake)" ;;
-    wineboot) echo 'trace:mscoree:install_wine_mono {mono}' >&2; sleep {boot_secs}; exit {boot_rc} ;;
+    wineboot) echo 'trace:mscoree:install_wine_mono {mono}' >&2; sleep {boot_secs}
+        mkdir -p "$WINEPREFIX"; {hives}; exit {boot_rc} ;;
+    cmd) echo '{cmd}' ;;
+    reg) echo '    CurrentBuildNumber    REG_SZ    19045' ;;
     winecfg) sleep 10 ;;
 esac
 """, 0o755)
-        write(root / "bin/wineserver", "#!/bin/sh\nexit 0\n", 0o755)
-        return root
+    write(root / "bin/wineserver", "#!/bin/sh\nexit 0\n", 0o755)
+    return root
 
-    def test_boot_check_times_out_when_no_window_shows(self):
-        out = self.work / "boot"
-        r = run("sh", SCRIPTS / "boot-check.sh", self.fake_runner(), out, 1)
+
+class BootCheck(unittest.TestCase):
+    """boot-check.sh without a GUI session, as on a headless runner."""
+
+    def setUp(self):
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix="boot-check-test-"))
+        self.addCleanup(shutil.rmtree, self.work)
+        self.out = self.work / "boot"
+
+    def boot(self, *args, **runner):
+        env = dict(os.environ, BOOT_GUI="0", BOOT_CMD_LIMIT="5")
+        return run("sh", SCRIPTS / "boot-check.sh", fake_runner(self.work, **runner), self.out, *args, env=env)
+
+    def result(self):
+        return (self.out / "boot.txt").read_text()
+
+    def test_headless_passes_on_a_working_prefix_and_console(self):
+        r = self.boot(1)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("cmd and reg ran", r.stdout)
+        self.assertIn("result=pass mode=headless", self.result())
+        self.assertIn("wine=wine-11.0 (fake)", self.result())
+        self.assertFalse((self.out / "winecfg.log").exists(), "no window check without a GUI session")
+
+    def test_fails_when_wineboot_writes_no_registry(self):
+        r = self.boot(1, registry=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("did not write system.reg", r.stderr)
+        self.assertIn("result=no-registry file=system.reg", self.result())
+
+    def test_fails_when_console_programs_do_not_run(self):
+        r = self.boot(1, cmd="")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("wine cmd /c ver exited", r.stderr)
+        self.assertIn("result=cmd-failed", self.result())
+
+    def test_fails_when_wineboot_would_download_mono(self):
+        r = self.boot(1, mono="mono runtime not found")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("did not use the bundled Wine Mono", r.stderr)
+        self.assertIn("result=addon-download", self.result())
+
+    def test_fails_when_prefix_init_overruns_its_limit(self):
+        r = self.boot(1, 1, boot_secs=10)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("did not finish within 1 s", r.stderr)
+        self.assertIn("result=init-timeout init_limit=1", self.result())
+
+    def test_reports_an_init_failure(self):
+        r = self.boot(1, boot_rc=3)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("initialization exited 3", r.stderr)
+        self.assertIn("result=init-failed rc=3", self.result())
+
+    @unittest.skipUnless(sys.platform == "darwin", "the window check uses swiftc and CoreGraphics")
+    def test_with_a_gui_session_times_out_when_no_window_shows(self):
+        env = dict(os.environ, BOOT_GUI="1")
+        r = run("sh", SCRIPTS / "boot-check.sh", fake_runner(self.work), self.out, 1, env=env)
         self.assertEqual(r.returncode, 1)
         self.assertIn("prefix initialized", r.stdout)
         self.assertIn("no winecfg window within 1 s", r.stderr)
-        self.assertIn("result=timeout limit=1", (out / "boot.txt").read_text())
-
-    def test_boot_check_fails_when_wineboot_would_download_mono(self):
-        out = self.work / "boot"
-        r = run("sh", SCRIPTS / "boot-check.sh", self.fake_runner(mono="mono runtime not found"), out, 1)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("did not use the bundled Wine Mono", r.stderr)
-        self.assertIn("result=addon-download", (out / "boot.txt").read_text())
-
-    def test_boot_check_fails_when_prefix_init_overruns_its_limit(self):
-        out = self.work / "boot"
-        r = run("sh", SCRIPTS / "boot-check.sh", self.fake_runner(boot_secs=10), out, 1, 1)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("did not finish within 1 s", r.stderr)
-        self.assertIn("result=init-timeout init_limit=1", (out / "boot.txt").read_text())
-
-    def test_boot_check_reports_an_init_failure(self):
-        out = self.work / "boot"
-        r = run("sh", SCRIPTS / "boot-check.sh", self.fake_runner(boot_rc=3), out, 1)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("initialization exited 3", r.stderr)
-        self.assertIn("result=init-failed rc=3", (out / "boot.txt").read_text())
+        self.assertIn("result=timeout limit=1", self.result())
+        self.assertTrue((self.out / "windows.txt").exists())
 
 
 class CheckDlopen(unittest.TestCase):
