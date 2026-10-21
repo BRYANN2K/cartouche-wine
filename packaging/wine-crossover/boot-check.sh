@@ -84,7 +84,18 @@ limited "$init_limit" "$out/wineboot.log" init || rc=$?
 init_seconds=$(( $(date +%s) - start ))
 [ "$rc" -ne 124 ] || fail "init-timeout init_limit=$init_limit" "$out/wineboot.log" \
     "prefix initialization did not finish within $init_limit s"
-[ "$rc" -eq 0 ] || fail "init-failed rc=$rc" "$out/wineboot.log" "prefix initialization exited $rc"
+if [ "$rc" -ne 0 ]; then
+    # The first errors and the PE folders say more than the log's end
+    {
+        echo "== first error lines"; grep -n "err:\|could not load\|c0000" "$out/wineboot.log" | head -n 60
+        echo "== log head"; head -n 40 "$out/wineboot.log"
+        for arch in i386-windows x86_64-windows; do
+            echo "== lib/wine/$arch: $(ls "$root/lib/wine/$arch" 2>/dev/null | wc -l) files"
+            ls -l "$root/lib/wine/$arch/kernel32.dll" "$root/lib/wine/$arch/ntdll.dll" 2>&1
+        done
+    } >&2 || true
+    fail "init-failed rc=$rc" "$out/wineboot.log" "prefix initialization exited $rc"
+fi
 echo "boot-check: prefix initialized in $init_seconds s"
 
 # appwiz.cpl traces "Got URL" only on its way to the download dialog
