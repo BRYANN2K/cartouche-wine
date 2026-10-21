@@ -76,6 +76,7 @@ class WineCrossOverScripts(unittest.TestCase):
         for name in ("libSDL2-2.0.0.dylib", "libSDL3.dylib"):
             run("cc", "-arch", "x86_64", "-dynamiclib", stub, "-install_name", "@rpath/" + name,
                 "-o", install / "lib" / name, check=True)
+        fake_licenses(install)
         return install
 
     def package(self):
@@ -227,6 +228,16 @@ class WineCrossOverScripts(unittest.TestCase):
         self.assertIn("check-deps.sh", r.stdout)
 
 
+def fake_licenses(install):
+    """What build.sh leaves in share/licenses for the fake install's SDL dylibs."""
+    licenses = install / "share/licenses"
+    write(licenses / "dylibs.txt", "libSDL2-2.0.0.dylib sdl2-compat\nlibSDL3.dylib sdl3\n")
+    for name in ("sdl2-compat", "sdl3"):
+        write(licenses / name / "LICENSE.txt", "zlib\n")
+    write(licenses / "wine-mono/COPYING", "MIT\n")
+    write(licenses / "wine-gecko/LICENSE", "MPL\n")
+
+
 def fake_runner(work, boot_secs=0, boot_rc=0, mono="mono runtime is at Z:\\wine\\mono", registry=True,
                 cmd="Microsoft Windows 10.0.19045"):
     """A runner whose wine sleeps through the prefix install, writes the registry,
@@ -373,6 +384,102 @@ class CheckDlopen(unittest.TestCase):
                 self.assertTrue(line.split()[0].endswith(".dylib"), line)
 
 
+class Licenses(unittest.TestCase):
+    """check-licenses.sh and collect-licenses.sh on fake trees and a fake brew."""
+
+    def setUp(self):
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix="licenses-test-"))
+        self.addCleanup(shutil.rmtree, self.work)
+        self.root = self.work / "pkg"
+        for name in ("libSDL2-2.0.0.dylib", "libSDL3.dylib"):
+            write(self.root / "lib" / name, "dylib\n")
+        write(self.root / "share/wine/mono/wine-mono-10.4.1/support/winemono-support.msi", "msi\n")
+        write(self.root / "share/wine/gecko/wine-gecko-2.47.4-x86/xul.dll", "MZ\n")
+        fake_licenses(self.root)
+
+    def check(self):
+        return run("sh", SCRIPTS / "check-licenses.sh", self.root)
+
+    def test_every_bundled_dylib_and_addon_has_a_license(self):
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_a_dylib_without_an_entry_fails(self):
+        write(self.root / "lib/libnettle.8.dylib", "dylib\n")
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("libnettle.8.dylib has no entry in share/licenses/dylibs.txt", r.stderr)
+
+    def test_a_package_without_files_fails(self):
+        shutil.rmtree(self.root / "share/licenses/sdl3")
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("libSDL3.dylib comes from sdl3, which has no files in share/licenses/sdl3", r.stderr)
+
+    def test_bundled_gecko_needs_its_license(self):
+        shutil.rmtree(self.root / "share/licenses/wine-gecko")
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Wine Gecko has no license", r.stderr)
+
+    # A Cellar with two kegs, a brew that serves their source tarballs, and the
+    # origins file bundle-deps.sh would write for them
+    def cellar(self, nettle_sources=True):
+        cellar = self.work / "usr/local/Cellar"
+        write(cellar / "gnutls/3.8.9/lib/libgnutls.30.dylib", "dylib\n")
+        write(cellar / "gnutls/3.8.9/COPYING", "GPL\n")
+        write(cellar / "gnutls/3.8.9/README.md", "readme\n")
+        write(cellar / "nettle/3.10.1/lib/libnettle.8.dylib", "dylib\n")
+        cache = self.work / "cache"
+        for name, files in (("gnutls", {"LICENSE": "LGPL\n", "doc/COPYING.LESSER": "LGPL\n",
+                                        "lib/deep/COPYING": "no\n", "NEWS": "news\n"}),
+                            ("nettle", {"COPYING.LESSERv3": "LGPLv3\n", "COPYINGv2": "GPLv2\n"}
+                             if nettle_sources else {"README": "readme\n"})):
+            src = self.work / "src" / f"{name}-1.0"
+            for rel, text in files.items():
+                write(src / rel, text)
+            cache.mkdir(exist_ok=True)
+            run("tar", "-czf", cache / f"{name}.tar.gz", "-C", src.parent, src.name, check=True)
+        bindir = self.work / "bin"
+        write(bindir / "brew", f"""#!/bin/sh
+case "$1" in
+    fetch) exit 0 ;;
+    --cache) for a; do f=$a; done; echo "{cache}/$f.tar.gz" ;;
+esac
+""", 0o755)
+        origins = self.work / "origins.txt"
+        origins.write_text(f"libgnutls.30.dylib {cellar}/gnutls/3.8.9/lib/libgnutls.30.dylib\n"
+                           f"libnettle.8.dylib {cellar}/nettle/3.10.1/lib/libnettle.8.dylib\n"
+                           f"libhogweed.6.dylib {cellar}/nettle/3.10.1/lib/libhogweed.6.dylib\n")
+        env = dict(os.environ, PATH=f"{bindir}:{os.environ['PATH']}")
+        return origins, env
+
+    def test_collect_copies_keg_and_source_licenses_and_maps_each_dylib(self):
+        origins, env = self.cellar()
+        dest = self.work / "licenses"
+        r = run("sh", SCRIPTS / "collect-licenses.sh", origins, dest, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual((dest / "dylibs.txt").read_text(),
+                         "libgnutls.30.dylib gnutls\nlibnettle.8.dylib nettle\nlibhogweed.6.dylib nettle\n")
+        files = sorted(str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file())
+        self.assertEqual(files, ["dylibs.txt", "formulas.txt", "gnutls/COPYING", "gnutls/LICENSE",
+                                 "gnutls/doc/COPYING.LESSER", "nettle/COPYING.LESSERv3", "nettle/COPYINGv2"])
+        self.assertEqual((dest / "formulas.txt").read_text(), "gnutls 3.8.9\nnettle 3.10.1\n")
+
+    def test_collect_fails_for_a_formula_without_license_files(self):
+        origins, env = self.cellar(nettle_sources=False)
+        r = run("sh", SCRIPTS / "collect-licenses.sh", origins, self.work / "licenses", env=env)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("no license file found for nettle", r.stderr)
+
+    def test_collect_refuses_a_dylib_from_outside_homebrew(self):
+        origins = self.work / "origins.txt"
+        origins.write_text("libfoo.1.dylib /opt/local/lib/libfoo.1.dylib\n")
+        r = run("sh", SCRIPTS / "collect-licenses.sh", origins, self.work / "licenses")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not a Homebrew keg", r.stderr)
+
+
 class ManifestEntry(unittest.TestCase):
 
     def test_url_must_be_https_and_name_the_archive(self):
@@ -403,10 +510,12 @@ class Pins(unittest.TestCase):
         pins = dict(line.split("=", 1) for line in (SCRIPTS / "pins.env").read_text().splitlines()
                     if line and not line.startswith("#"))
         for key in ("CX_SOURCE_SHA256", "LLVM_MINGW_SHA256", "WINE_MONO_SHA256", "WINE_GECKO_X86_SHA256",
-                    "WINE_GECKO_X86_64_SHA256"):
+                    "WINE_GECKO_X86_64_SHA256", "WINE_MONO_LICENSE_SHA256", "WINE_GECKO_LICENSE_SHA256",
+                    "WINE_GECKO_LICENSE_HTML_SHA256"):
             self.assertRegex(pins[key], r"^[0-9a-f]{64}$")
         for key in ("CX_SOURCE_URL", "LLVM_MINGW_URL", "WINE_MONO_URL", "WINE_GECKO_X86_URL",
-                    "WINE_GECKO_X86_64_URL"):
+                    "WINE_GECKO_X86_64_URL", "WINE_MONO_LICENSE_URL", "WINE_GECKO_LICENSE_URL",
+                    "WINE_GECKO_LICENSE_HTML_URL"):
             self.assertTrue(pins[key].startswith("https://"))
         mono, gecko = pins["WINE_MONO_VERSION"], pins["WINE_GECKO_VERSION"]
         self.assertTrue(pins["WINE_MONO_URL"].endswith(f"/{mono}/wine-mono-{mono}-x86.tar.xz"))

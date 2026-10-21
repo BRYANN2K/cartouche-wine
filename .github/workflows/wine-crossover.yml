@@ -74,6 +74,12 @@ jobs:
             "work/downloads/wine-gecko-$WINE_GECKO_VERSION-x86.tar.xz"
           sh packaging/wine-crossover/fetch.sh "$WINE_GECKO_X86_64_URL" "$WINE_GECKO_X86_64_SHA256" \
             "work/downloads/wine-gecko-$WINE_GECKO_VERSION-x86_64.tar.xz"
+          sh packaging/wine-crossover/fetch.sh "$WINE_MONO_LICENSE_URL" "$WINE_MONO_LICENSE_SHA256" \
+            "work/downloads/wine-mono-$WINE_MONO_VERSION-COPYING"
+          sh packaging/wine-crossover/fetch.sh "$WINE_GECKO_LICENSE_URL" "$WINE_GECKO_LICENSE_SHA256" \
+            "work/downloads/wine-gecko-$WINE_GECKO_VERSION-LICENSE"
+          sh packaging/wine-crossover/fetch.sh "$WINE_GECKO_LICENSE_HTML_URL" "$WINE_GECKO_LICENSE_HTML_SHA256" \
+            "work/downloads/wine-gecko-$WINE_GECKO_VERSION-license.html"
 
       - name: Install the Homebrew formulas
         run: |
