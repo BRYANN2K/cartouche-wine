@@ -1,7 +1,7 @@
 #!/bin/sh
 # Checks a packaged Cartouche Wine the way the app will get it: the archive
-# matches its .sha256, unpacks into one folder with the notices, depends on
-# nothing outside itself, and its wine runs.
+# matches its .sha256, unpacks into one folder with the notices and the pinned
+# Wine Mono and Gecko, depends on nothing outside itself, and its wine runs.
 #
 #   ./verify.sh <archive.tar.xz>
 #
@@ -9,6 +9,7 @@
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd -P)"
+. "${PINS_FILE:-$here/pins.env}"
 [ $# -eq 1 ] || { echo "usage: verify.sh <archive.tar.xz>" >&2; exit 2; }
 archive=$1
 fail() { echo "verify: $*" >&2; exit 1; }
@@ -30,6 +31,11 @@ for f in bin/wine bin/wineserver lib/wine/x86_64-unix/wine share/wine/wine.inf \
 done
 for arch in x86_64-windows i386-windows; do
     [ -f "$root/lib/wine/$arch/ntdll.dll" ] || fail "$roots/lib/wine/$arch/ntdll.dll is missing"
+done
+# Without these, every new prefix offers to download them
+for f in "mono/wine-mono-$WINE_MONO_VERSION/support/winemono-support.msi" \
+    "gecko/wine-gecko-$WINE_GECKO_VERSION-x86/xul.dll" "gecko/wine-gecko-$WINE_GECKO_VERSION-x86_64/xul.dll"; do
+    [ -f "$root/share/wine/$f" ] || fail "$roots/share/wine/$f is missing"
 done
 sh "$here/check-deps.sh" "$root"
 sh "$here/check-sdl.sh" "$root"

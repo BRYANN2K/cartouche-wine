@@ -7,8 +7,8 @@
 #   ./build.sh --dry-run <work folder>   print the commands only
 #
 # Needs an x86_64 Mac with Xcode, Homebrew and the formulas in pins.env, and the
-# two pinned downloads in <work folder>/downloads (fetch.sh). CI only: a full
-# build takes about an hour.
+# pinned downloads in <work folder>/downloads (fetch.sh): the sources,
+# llvm-mingw, Wine Mono and Wine Gecko. CI only: a full build takes about an hour.
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd -P)"
@@ -25,6 +25,9 @@ run() {
 
 source_tar="$work/downloads/crossover-sources-$CX_VERSION.tar.gz"
 mingw_tar="$work/downloads/llvm-mingw-$LLVM_MINGW_VERSION.tar.xz"
+mono_tar="$work/downloads/wine-mono-$WINE_MONO_VERSION-x86.tar.xz"
+gecko_x86_tar="$work/downloads/wine-gecko-$WINE_GECKO_VERSION-x86.tar.xz"
+gecko_x86_64_tar="$work/downloads/wine-gecko-$WINE_GECKO_VERSION-x86_64.tar.xz"
 src="$work/src"
 build="$work/build"
 deps="$work/deps"
@@ -33,7 +36,9 @@ install="$work/install"
 # Without --dry-run, refuse anything but the pinned inputs
 if [ -z "$dry" ]; then
     [ "$(uname -m)" = x86_64 ] || { echo "build.sh: needs an x86_64 Mac (the runner is x86_64 code run by Rosetta)" >&2; exit 1; }
-    for pin in "$source_tar:$CX_SOURCE_SHA256" "$mingw_tar:$LLVM_MINGW_SHA256"; do
+    for pin in "$source_tar:$CX_SOURCE_SHA256" "$mingw_tar:$LLVM_MINGW_SHA256" \
+        "$mono_tar:$WINE_MONO_SHA256" "$gecko_x86_tar:$WINE_GECKO_X86_SHA256" \
+        "$gecko_x86_64_tar:$WINE_GECKO_X86_64_SHA256"; do
         f=${pin%:*} want=${pin##*:}
         [ "$(shasum -a 256 "$f" | cut -d' ' -f1)" = "$want" ] || { echo "build.sh: $f does not match its pin" >&2; exit 1; }
     done
@@ -46,6 +51,12 @@ run rm -rf "$src" "$build" "$deps" "$install" "$work/llvm-mingw"
 run mkdir -p "$src" "$build" "$deps/lib" "$install" "$work/llvm-mingw"
 run tar -xzf "$source_tar" -C "$src"
 run tar -xJf "$mingw_tar" -C "$work/llvm-mingw" --strip-components 1
+# The addon versions this Wine asks for are the pinned ones
+addons="$src/sources/wine/dlls/appwiz.cpl/addons.c"
+for want in "MONO_VERSION \"$WINE_MONO_VERSION\"" "GECKO_VERSION \"$WINE_GECKO_VERSION\""; do
+    [ -n "$dry" ] || grep -q "^#define $want" "$addons" \
+        || { echo "build.sh: $addons does not define $want; update pins.env" >&2; exit 1; }
+done
 PATH="$work/llvm-mingw/bin:$PATH"
 
 if [ -n "$dry" ]; then brew() { echo "/usr/local/opt/$2"; }; fi
@@ -93,6 +104,11 @@ run "$src/sources/wine/configure" \
 run make -j"$(sysctl -n hw.ncpu)"
 run make install-lib
 run cp -R "$deps/lib/." "$install/lib/"
+# Shared addons: wine-mono-<ver>/ and wine-gecko-<ver>-<arch>/ under share/wine
+run mkdir -p "$install/share/wine/mono" "$install/share/wine/gecko"
+run tar -xJf "$mono_tar" -C "$install/share/wine/mono"
+run tar -xJf "$gecko_x86_tar" -C "$install/share/wine/gecko"
+run tar -xJf "$gecko_x86_64_tar" -C "$install/share/wine/gecko"
 run sh "$here/check-deps.sh" "$install"
 run sh "$here/check-sdl.sh" "$install"
 [ -n "$dry" ] || "$install/bin/wine" --version

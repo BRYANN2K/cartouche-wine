@@ -32,11 +32,12 @@ swiftc -O "$here/wait-window.swift" -o "$work/wait-window"
 
 # Programs started before the prefix install finishes fail to open windows, so
 # run wineboot first under its own limit; the remaining system services don't
-# keep wineserver alive, so -w returns once the install is done.
+# keep wineserver alive, so -w returns once the install is done. mscoree stays
+# on, so the bundled Wine Mono is installed (its traces are checked below).
 start=$(date +%s)
 (
     set +e
-    WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=err+all "$root/bin/wine" wineboot -i \
+    WINEDEBUG=err+all,trace+mscoree,trace+appwizcpl "$root/bin/wine" wineboot -i \
         && "$root/bin/wineserver" -w
     r=$?
     touch "$work/init-done"
@@ -64,6 +65,15 @@ if [ "$rc" -ne 0 ]; then
     exit 1
 fi
 echo "boot-check: prefix initialized in $init_seconds s"
+
+# appwiz.cpl traces "Got URL" only on its way to the download dialog
+if grep -q "mono runtime not found\|Got URL" "$out/wineboot.log" \
+    || ! grep -q "mono runtime is at" "$out/wineboot.log"; then
+    echo "boot-check: wineboot did not use the bundled Wine Mono" >&2
+    grep "mscoree\|appwizcpl" "$out/wineboot.log" | tail -n 30 >&2 || true
+    echo "result=addon-download" > "$out/boot.txt"
+    exit 1
+fi
 
 WINEDEBUG=err+all "$root/bin/wine" winecfg > "$out/winecfg.log" 2>&1 &
 # The loader shows up under its own name, or the program's
