@@ -1,0 +1,18 @@
+# Dylibs the package may name for dlopen without bundling them, read by
+# check_dlopen.py. Shell patterns on the file name; each needs its reason.
+
+# Configured --without-* in build.sh; listed in case a name still shows up
+libdbus-1*.dylib            # --without-dbus
+libfontconfig*.dylib        # --without-fontconfig
+libkrb5*.dylib              # --without-krb5
+libgssapi_krb5*.dylib       # --without-gssapi
+libnetapi*.dylib            # --without-netapi; configure names it even when absent
+libv4l2*.dylib              # --without-v4l2
+libX*.dylib                 # --without-x
+libGL*.dylib                # X11 OpenGL; the macOS driver uses OpenGL.framework
+libEGL*.dylib               # no EGL on macOS
+libGLESv2*.dylib            # no EGL on macOS
+
+# Optional at run time: the caller works without them
+libodbc*.dylib              # odbc32 uses a driver manager only if the user has one
+libvulkan*.dylib            # SDL3 and winevulkan try a Vulkan loader, then MoltenVK

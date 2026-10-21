@@ -2,7 +2,7 @@
 # Fails when a Mach-O file in the package loads a library from outside macOS and
 # the package itself, or searches a build machine folder. A runner that only
 # works where Homebrew is installed would pass every check on CI and fail on
-# the user's Mac.
+# the user's Mac. Libraries opened by name at run time are check_dlopen.py's.
 #
 #   ./check-deps.sh <package root>
 set -eu

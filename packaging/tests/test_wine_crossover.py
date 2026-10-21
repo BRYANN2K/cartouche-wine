@@ -270,6 +270,68 @@ esac
         self.assertIn("result=init-failed rc=3", (out / "boot.txt").read_text())
 
 
+class CheckDlopen(unittest.TestCase):
+    """check_dlopen.py on fake Mach-O files: a magic number and some strings."""
+
+    def setUp(self):
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix="check-dlopen-test-"))
+        self.addCleanup(shutil.rmtree, self.work)
+        self.root = self.work / "pkg"
+        self.system = self.work / "usrlib"
+        write(self.system / "libz.1.dylib", "")
+        self.allow = self.work / "allow.txt"
+        self.allow.write_text("# optional\nlibodbc*.dylib  # no driver manager\n")
+
+    def macho(self, rel, *strings):
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"\xcf\xfa\xed\xfe\x07\x00\x00\x01" + b"".join(s.encode() + b"\0" for s in strings))
+
+    def check(self):
+        return run(sys.executable, SCRIPTS / "check_dlopen.py", self.root, "--allow", self.allow,
+                   "--system-dir", self.system)
+
+    # What the 26.3.0-1 build shipped: sdl2-compat, which dlopens SDL3, without SDL3
+    def sdl2_compat_package(self):
+        self.macho("lib/wine/x86_64-unix/winebus.so", "libSDL2-2.0.0.dylib", "SDL_Init")
+        self.macho("lib/libSDL2-2.0.0.dylib", "@rpath/libSDL2-2.0.0.dylib", "@loader_path/libSDL3.dylib",
+                   "libSDL3.dylib", "/usr/lib/libSystem.B.dylib")
+
+    def test_a_dlopened_library_missing_from_the_package_fails(self):
+        self.sdl2_compat_package()
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("lib/libSDL2-2.0.0.dylib names libSDL3.dylib", r.stderr)
+        self.assertIn("lib/libSDL2-2.0.0.dylib names @loader_path/libSDL3.dylib", r.stderr)
+
+    def test_bundled_system_and_allowed_names_pass(self):
+        self.sdl2_compat_package()
+        self.macho("lib/libSDL3.dylib", "@rpath/libSDL3.dylib", "libz.1.dylib")
+        self.macho("lib/wine/x86_64-unix/odbc32.so", "libodbc.2.dylib")
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("check-dlopen: every dylib named", r.stdout)
+
+    def test_a_build_machine_path_fails_even_if_the_name_is_bundled(self):
+        self.macho("lib/libgnutls.30.dylib", "/usr/local/opt/gmp/lib/libgmp.10.dylib")
+        self.macho("lib/libgmp.10.dylib", "@rpath/libgmp.10.dylib")
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("names /usr/local/opt/gmp/lib/libgmp.10.dylib", r.stderr)
+
+    def test_only_mach_o_files_and_whole_names_count(self):
+        write(self.root / "share/wine/notes.txt", "libmissing.1.dylib\n")
+        self.macho("lib/wine/x86_64-unix/ntdll.so", "lib%s.dylib", "%s.dylib", ".dylib")
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_the_allow_list_gives_a_reason_for_each_pattern(self):
+        for line in (SCRIPTS / "dlopen-allow.txt").read_text().splitlines():
+            if line.strip() and not line.startswith("#"):
+                self.assertIn("#", line, f"no reason for {line}")
+                self.assertTrue(line.split()[0].endswith(".dylib"), line)
+
+
 class ManifestEntry(unittest.TestCase):
 
     def test_url_must_be_https_and_name_the_archive(self):
