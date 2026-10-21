@@ -115,7 +115,7 @@ run tar -xJf "$gecko_x86_tar" -C "$install/share/wine/gecko"
 run tar -xJf "$gecko_x86_64_tar" -C "$install/share/wine/gecko"
 # Every bundled library's license, under share/licenses/<package>/
 licenses="$install/share/licenses"
-run sh "$here/collect-licenses.sh" "$deps/origins.txt" "$licenses"
+run sh "$here/collect-licenses.sh" "$deps/origins.txt" "$licenses" "$work/brew-sources"
 run mkdir -p "$licenses/wine-mono" "$licenses/wine-gecko"
 run cp "$mono_license" "$licenses/wine-mono/COPYING"
 run cp "$gecko_license" "$licenses/wine-gecko/LICENSE"

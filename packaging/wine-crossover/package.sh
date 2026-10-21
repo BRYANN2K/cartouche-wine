@@ -54,6 +54,9 @@ It is not CrossOver and is not made or supported by CodeWeavers.
 - Its SHA-256: $CX_SOURCE_SHA256
 - A copy of that tarball is attached to the same release as this archive:
   https://github.com/$repository/releases/tag/$tag
+- The source archives of the bundled Homebrew libraries (share/licenses/formulas.txt
+  lists them with their versions) are attached to that release too, as
+  brew-<formula>-<version>.<ext>
 - Build scripts: https://github.com/$repository/tree/$commit/packaging/wine-crossover
 - Toolchain: Xcode at $XCODE_APP, llvm-mingw $LLVM_MINGW_VERSION, macOS $MACOSX_DEPLOYMENT_TARGET target,
   Homebrew $BREW_BUILD_DEPS $BREW_LINK_DEPS (versions in BUILDINFO.txt)
