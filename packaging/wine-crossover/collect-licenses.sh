@@ -4,15 +4,18 @@
 # <licenses folder>/dylibs.txt. The files come from the keg and from the
 # formula's source (brew fetch -s), because kegs keep only some of them.
 #
-#   ./collect-licenses.sh <origins file> <licenses folder>
+#   ./collect-licenses.sh <origins file> <licenses folder> [<sources folder>]
 #
-# The origins file is the one bundle-deps.sh --origins writes. Exits 1 when a
-# dylib is not from a keg or a formula has no license file.
+# The origins file is the one bundle-deps.sh --origins writes. With a sources
+# folder, each formula's source archive is also copied there as
+# <formula>-<version>.<ext>, for the LGPL source offer. Exits 1 when a dylib is
+# not from a keg or a formula has no license file.
 set -eu
 
-[ $# -eq 2 ] || { echo "usage: collect-licenses.sh <origins file> <licenses folder>" >&2; exit 2; }
-origins=$1 dest=$2
+[ $# -eq 2 ] || [ $# -eq 3 ] || { echo "usage: collect-licenses.sh <origins file> <licenses folder> [<sources folder>]" >&2; exit 2; }
+origins=$1 dest=$2 sources=${3:-}
 mkdir -p "$dest"
+[ -z "$sources" ] || mkdir -p "$sources"
 : > "$dest/dylibs.txt"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -52,6 +55,18 @@ while read -r leaf path; do
 
     brew fetch --quiet --build-from-source "$formula" > /dev/null
     src=$(brew --cache --build-from-source "$formula")
+    if [ -n "$sources" ]; then
+        if [ -d "$src" ]; then
+            tar -czf "$sources/$formula-$version.tar.gz" -C "$(dirname "$src")" "$(basename "$src")"
+        else
+            name=$(basename "$src")
+            case "$name" in
+                *.tar.*) ext=tar.${name##*.tar.} ;;
+                *) ext=${name##*.} ;;
+            esac
+            cp "$src" "$sources/$formula-$version.$ext"
+        fi
+    fi
     if [ -d "$src" ]; then
         (cd "$src" && find . -maxdepth 2 -type f | sed 's|^\./|x/|') | source_licenses | while IFS= read -r f; do
             mkdir -p "$dest/$formula/$(dirname "${f#*/}")"

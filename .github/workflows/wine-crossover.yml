@@ -98,6 +98,9 @@ jobs:
           . packaging/wine-crossover/pins.env
           sh packaging/wine-crossover/package.sh work/install \
             "work/downloads/crossover-sources-$CX_VERSION.tar.gz" out
+          # The LGPL source offer for the bundled Homebrew libraries
+          mkdir -p out/brew-sources
+          for f in work/brew-sources/*; do cp "$f" "out/brew-sources/brew-$(basename "$f")"; done
           echo "tag=$(cat out/tag)" >> "$GITHUB_OUTPUT"
           cat out/manifest-entry.json >> "$GITHUB_STEP_SUMMARY"
 
@@ -160,4 +163,4 @@ jobs:
           gh release create "$TAG" --prerelease --latest=false \
             --title "Cartouche Wine $CX_VERSION-$BUILD_REVISION" --notes-file out/SOURCE.md \
             out/"$TAG"-x86_64.tar.xz out/"$TAG"-x86_64.tar.xz.sha256 out/manifest-entry.json \
-            out/SOURCE.md "out/crossover-sources-$CX_VERSION.tar.gz"
+            out/SOURCE.md "out/crossover-sources-$CX_VERSION.tar.gz" out/brew-sources/*

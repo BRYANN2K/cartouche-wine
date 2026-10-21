@@ -466,6 +466,14 @@ esac
                                  "gnutls/doc/COPYING.LESSER", "nettle/COPYING.LESSERv3", "nettle/COPYINGv2"])
         self.assertEqual((dest / "formulas.txt").read_text(), "gnutls 3.8.9\nnettle 3.10.1\n")
 
+    def test_collect_copies_each_formula_source_for_the_source_offer(self):
+        origins, env = self.cellar()
+        sources = self.work / "sources"
+        r = run("sh", SCRIPTS / "collect-licenses.sh", origins, self.work / "licenses", sources, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(sorted(p.name for p in sources.iterdir()),
+                         ["gnutls-3.8.9.tar.gz", "nettle-3.10.1.tar.gz"])
+
     def test_collect_fails_for_a_formula_without_license_files(self):
         origins, env = self.cellar(nettle_sources=False)
         r = run("sh", SCRIPTS / "collect-licenses.sh", origins, self.work / "licenses", env=env)
