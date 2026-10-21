@@ -119,12 +119,13 @@ class WineCrossOverScripts(unittest.TestCase):
         self.assertIn("https://media.codeweavers.com/pub/crossover/source/crossover-sources-26.3.0.tar.gz", offer)
         self.assertIn("https://github.com/owner/repo/releases/tag/wine-crossover-26.3.0-2", offer)
         self.assertIn("tree/abc123/packaging/wine-crossover", offer)
-        self.assertIn("Lesser General Public", offer)
+        self.assertIn("GNU Lesser General Public", offer)
+        self.assertIn("Cartouche Wine 26.3.0-2: Wine built from CodeWeavers'", offer)
 
         entry = json.loads((out / "manifest-entry.json").read_text())
         self.assertEqual(entry, {
             "id": "wine-crossover-26.3.0-2", "kind": "wineBuild", "origin": "cartouche",
-            "name": "Wine CrossOver", "version": "26.3.0", "displayVersion": "26.3",
+            "name": "Cartouche Wine", "version": "26.3.0", "displayVersion": "26.3",
             "url": "https://github.com/owner/repo/releases/download/wine-crossover-26.3.0-2/"
                    "wine-crossover-26.3.0-2-x86_64.tar.xz",
             "size": asset.stat().st_size, "sha256": sha256(asset),
@@ -247,13 +248,23 @@ class ManifestEntry(unittest.TestCase):
     def test_url_must_be_https_and_name_the_archive(self):
         with tempfile.NamedTemporaryFile(suffix=".tar.xz") as f:
             name = pathlib.Path(f.name).name
-            kw = dict(id="x", root="x", name="Wine CrossOver", version="26.3.0", display_version="26.3",
+            kw = dict(id="x", root="x", name="Cartouche Wine", version="26.3.0", display_version="26.3",
                       origin="cartouche")
             self.assertEqual(manifest_entry.entry(f.name, url=f"https://h/{name}", **kw)["size"], 0)
             with self.assertRaises(SystemExit):
                 manifest_entry.entry(f.name, url=f"http://h/{name}", **kw)
             with self.assertRaises(SystemExit):
                 manifest_entry.entry(f.name, url="https://h/other.tar.xz", **kw)
+
+    def test_the_display_name_is_cartouche_wine_and_the_id_stays(self):
+        with tempfile.NamedTemporaryFile(suffix=".tar.xz") as f:
+            name = pathlib.Path(f.name).name
+            r = run(sys.executable, SCRIPTS / "manifest_entry.py", f.name, "--id", "wine-crossover-26.3.0-2",
+                    "--url", f"https://h/{name}", "--root", "wine-crossover-26.3.0-2",
+                    "--version", "26.3.0", "--display-version", "26.3", check=True)
+            entry = json.loads(r.stdout)
+            self.assertEqual(entry["name"], "Cartouche Wine")
+            self.assertEqual(entry["id"], "wine-crossover-26.3.0-2")
 
 
 class Pins(unittest.TestCase):
