@@ -2,13 +2,16 @@
 # Copies dylibs and every non-system dylib they load into one folder, and makes
 # them find each other through @rpath, so the package needs nothing from Homebrew.
 #
-#   ./bundle-deps.sh <out folder> <dylib>...
+#   ./bundle-deps.sh [--origins <file>] <out folder> <dylib>...
 #
 # Wine is then configured against this folder, so the library names it dlopens
-# are @rpath names too.
+# are @rpath names too. --origins appends "<dylib name> <real path it was
+# copied from>" lines, which collect-licenses.sh reads.
 set -eu
 
-[ $# -ge 2 ] || { echo "usage: bundle-deps.sh <out folder> <dylib>..." >&2; exit 2; }
+origins=/dev/null
+if [ "${1:-}" = --origins ]; then origins=$2; shift 2; fi
+[ $# -ge 2 ] || { echo "usage: bundle-deps.sh [--origins <file>] <out folder> <dylib>..." >&2; exit 2; }
 out=$1
 shift
 mkdir -p "$out"
@@ -57,6 +60,7 @@ while [ -s "$queue" ]; do
     grep -qxF "$leaf" "$done_list" && continue
     echo "$leaf" >> "$done_list"
     [ -f "$lib" ] || { echo "bundle-deps: $lib does not exist" >&2; exit 1; }
+    echo "$leaf $(realpath "$lib")" >> "$origins"
 
     copy="$out/$leaf"
     cp -fL "$lib" "$copy"

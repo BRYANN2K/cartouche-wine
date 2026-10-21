@@ -40,6 +40,7 @@ done
 sh "$here/check-deps.sh" "$root"
 python3 "$here/check_dlopen.py" "$root"
 sh "$here/check-sdl.sh" "$root"
+sh "$here/check-licenses.sh" "$root"
 
 # A scratch home, so nothing from this machine's Wine setup is read
 home="$work/home"

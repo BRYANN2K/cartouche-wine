@@ -28,6 +28,9 @@ mingw_tar="$work/downloads/llvm-mingw-$LLVM_MINGW_VERSION.tar.xz"
 mono_tar="$work/downloads/wine-mono-$WINE_MONO_VERSION-x86.tar.xz"
 gecko_x86_tar="$work/downloads/wine-gecko-$WINE_GECKO_VERSION-x86.tar.xz"
 gecko_x86_64_tar="$work/downloads/wine-gecko-$WINE_GECKO_VERSION-x86_64.tar.xz"
+mono_license="$work/downloads/wine-mono-$WINE_MONO_VERSION-COPYING"
+gecko_license="$work/downloads/wine-gecko-$WINE_GECKO_VERSION-LICENSE"
+gecko_license_html="$work/downloads/wine-gecko-$WINE_GECKO_VERSION-license.html"
 src="$work/src"
 build="$work/build"
 deps="$work/deps"
@@ -38,7 +41,8 @@ if [ -z "$dry" ]; then
     [ "$(uname -m)" = x86_64 ] || { echo "build.sh: needs an x86_64 Mac (the runner is x86_64 code run by Rosetta)" >&2; exit 1; }
     for pin in "$source_tar:$CX_SOURCE_SHA256" "$mingw_tar:$LLVM_MINGW_SHA256" \
         "$mono_tar:$WINE_MONO_SHA256" "$gecko_x86_tar:$WINE_GECKO_X86_SHA256" \
-        "$gecko_x86_64_tar:$WINE_GECKO_X86_64_SHA256"; do
+        "$gecko_x86_64_tar:$WINE_GECKO_X86_64_SHA256" "$mono_license:$WINE_MONO_LICENSE_SHA256" \
+        "$gecko_license:$WINE_GECKO_LICENSE_SHA256" "$gecko_license_html:$WINE_GECKO_LICENSE_HTML_SHA256"; do
         f=${pin%:*} want=${pin##*:}
         [ "$(shasum -a 256 "$f" | cut -d' ' -f1)" = "$want" ] || { echo "build.sh: $f does not match its pin" >&2; exit 1; }
     done
@@ -78,7 +82,7 @@ lib_of() {
 libs=
 for f in $BREW_LINK_DEPS; do libs="$libs $(lib_of "$f")"; done
 # shellcheck disable=SC2086
-run sh "$here/bundle-deps.sh" "$deps/lib" $libs
+run sh "$here/bundle-deps.sh" --origins "$deps/origins.txt" "$deps/lib" $libs
 
 # lib/wine/x86_64-unix/../../ is lib/, where the bundled dylibs go
 ldflags="-L$deps/lib -Wl,-rpath,@loader_path/../../ -Wl,-headerpad_max_install_names"
@@ -109,7 +113,15 @@ run mkdir -p "$install/share/wine/mono" "$install/share/wine/gecko"
 run tar -xJf "$mono_tar" -C "$install/share/wine/mono"
 run tar -xJf "$gecko_x86_tar" -C "$install/share/wine/gecko"
 run tar -xJf "$gecko_x86_64_tar" -C "$install/share/wine/gecko"
+# Every bundled library's license, under share/licenses/<package>/
+licenses="$install/share/licenses"
+run sh "$here/collect-licenses.sh" "$deps/origins.txt" "$licenses"
+run mkdir -p "$licenses/wine-mono" "$licenses/wine-gecko"
+run cp "$mono_license" "$licenses/wine-mono/COPYING"
+run cp "$gecko_license" "$licenses/wine-gecko/LICENSE"
+run cp "$gecko_license_html" "$licenses/wine-gecko/license.html"
 run sh "$here/check-deps.sh" "$install"
 run python3 "$here/check_dlopen.py" "$install"
 run sh "$here/check-sdl.sh" "$install"
+run sh "$here/check-licenses.sh" "$install"
 [ -n "$dry" ] || "$install/bin/wine" --version

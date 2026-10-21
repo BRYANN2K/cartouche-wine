@@ -17,6 +17,7 @@ repository=${REPOSITORY:-BRYANN2K/cartouche-wine}
 commit=${GITHUB_SHA:-$(git -C "$here" rev-parse HEAD 2>/dev/null || echo unknown)}
 
 [ -x "$install/bin/wine" ] || { echo "package.sh: $install/bin/wine is missing" >&2; exit 1; }
+sh "$here/check-licenses.sh" "$install"
 [ "$(shasum -a 256 "$source_tar" | cut -d' ' -f1)" = "$CX_SOURCE_SHA256" ] \
     || { echo "package.sh: $source_tar is not the pinned source tarball" >&2; exit 1; }
 
@@ -43,7 +44,9 @@ cat > "$root/SOURCE.md" <<EOF
 This is Cartouche Wine $CX_VERSION-$BUILD_REVISION: Wine built from CodeWeavers'
 CrossOver $CX_VERSION sources (LGPL) by Cartouche. It is free software under
 the GNU Lesser General Public License, version 2.1 or later (COPYING.LIB,
-LICENSE, AUTHORS).
+LICENSE, AUTHORS). The libraries bundled with it (lib/*.dylib), Wine Mono and
+Wine Gecko keep their own licenses, in share/licenses/<package>/;
+share/licenses/dylibs.txt maps each dylib to its package.
 
 It is not CrossOver and is not made or supported by CodeWeavers.
 
