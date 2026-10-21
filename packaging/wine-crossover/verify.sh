@@ -38,6 +38,7 @@ for f in "mono/wine-mono-$WINE_MONO_VERSION/support/winemono-support.msi" \
     [ -f "$root/share/wine/$f" ] || fail "$roots/share/wine/$f is missing"
 done
 sh "$here/check-deps.sh" "$root"
+python3 "$here/check_dlopen.py" "$root"
 sh "$here/check-sdl.sh" "$root"
 
 # A scratch home, so nothing from this machine's Wine setup is read

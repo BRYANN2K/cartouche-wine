@@ -110,5 +110,6 @@ run tar -xJf "$mono_tar" -C "$install/share/wine/mono"
 run tar -xJf "$gecko_x86_tar" -C "$install/share/wine/gecko"
 run tar -xJf "$gecko_x86_64_tar" -C "$install/share/wine/gecko"
 run sh "$here/check-deps.sh" "$install"
+run python3 "$here/check_dlopen.py" "$install"
 run sh "$here/check-sdl.sh" "$install"
 [ -n "$dry" ] || "$install/bin/wine" --version
