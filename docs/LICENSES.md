@@ -8,6 +8,7 @@ This document is for users, packagers and anyone checking that Cartouche Wine me
 | --- | --- | --- |
 | Wine, as in CodeWeavers' CrossOver 26.3 sources | GNU Lesser General Public License, version 2.1 or later | `COPYING.LIB`, `LICENSE`, `AUTHORS` at the top of the archive |
 | Bundled libraries (FreeType, GnuTLS, MoltenVK, SDL2, SDL3 and their dependencies) | Each has its own | `share/licenses/<package>/` |
+| GStreamer and FFmpeg (26.3.0-3 development recipe) | Selected LGPL components; see their bundled notices | `share/licenses/gstreamer/`, `share/licenses/ffmpeg/` |
 | Wine Mono | Its own licenses (`COPYING` of the tagged source) | `share/licenses/wine-mono/` |
 | Wine Gecko | Its own licenses (`LICENSE`, `license.html`) | `share/licenses/wine-gecko/` |
 | The build scripts in this repository | Not decided | <!-- TODO verify: no LICENSE file in the repository --> |
@@ -18,11 +19,12 @@ License files come from the Homebrew keg and from the formula's source archive, 
 
 ## The source offer
 
-The LGPL requires that anyone who gets the binaries can get the source and rebuild them. Cartouche Wine meets this in three ways. Every release has:
+The LGPL requires that anyone who gets the binaries can get the source and rebuild them. The release workflow provides the following source assets and build information. The 26.3.0-2 release attaches the Wine and Homebrew sources described below; the current workflow also covers the new 26.3.0-3 components. The first 26.3.0-1 release attached only its runtime and checksum. Check the assets of the version you use:
 
 1. **CodeWeavers' source tarball**, `crossover-sources-<version>.tar.gz`, attached to the same release as the archive. It is the file the build downloaded. Its URL and SHA-256 are in `SOURCE.md` and `pins.env`.
 2. **The source archives of the bundled Homebrew libraries**, attached as `brew-<formula>-<version>.<ext>`.
-3. **The build scripts**, in this repository. `SOURCE.md` links to `packaging/wine-crossover` at the exact commit.
+3. **FFmpeg sources** for the 26.3.0-3 recipe, attached as `ffmpeg-<version>.tar.xz`. GStreamer sources are inside the CodeWeavers tarball.
+4. **The build scripts**, in this repository. `SOURCE.md` links to `packaging/wine-crossover` at the exact commit.
 
 `SOURCE.md` is inside the archive and is also the release description. It names the toolchain: Xcode, llvm-mingw, the deployment target, the Homebrew formulas (versions in `BUILDINFO.txt`).
 

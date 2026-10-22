@@ -23,6 +23,7 @@ Upstream behavior that Cartouche relies on lives in CodeWeavers' sources, not he
 | `--with-gnutls` | TLS for Wine's secure channel (`schannel`). Library bundled. |
 | `--with-opencl` | OpenCL through Apple's framework. <!-- TODO verify: the commit history does not state the reason --> |
 | `--with-sdl` | Game controllers through SDL (`winebus`). Libraries bundled. |
+| `--with-gstreamer` | Game video and audio through the bundled GStreamer/FFmpeg stack (26.3.0-3 development recipe). |
 | `--with-vulkan` | Vulkan through MoltenVK (bundled). |
 | `--disable-tests` | Wine's own test suite is not built. It is not needed to run Wine and makes the build longer. |
 
@@ -30,14 +31,14 @@ OpenGL is left to `configure` (commit 738ffef): the macOS driver uses `OpenGL.fr
 
 ### Disabled
 
-`--without-alsa --without-capi --without-dbus --without-fontconfig --without-gphoto --without-gssapi --without-gstreamer --without-inotify --without-krb5 --without-netapi --without-oss --without-pcap --without-pulse --without-sane --without-udev --without-usb --without-v4l2 --without-wayland --without-x`
+`--without-alsa --without-capi --without-dbus --without-fontconfig --without-gphoto --without-gssapi --without-ffmpeg --without-inotify --without-krb5 --without-netapi --without-oss --without-pcap --without-pulse --without-sane --without-udev --without-usb --without-v4l2 --without-wayland --without-x`
 
 Two groups:
 
 - **Linux-only subsystems** with nothing to use on macOS: ALSA, OSS, PulseAudio, udev, inotify, v4l2, Wayland, X11, D-Bus.
 - **Optional libraries** that Cartouche does not ship, so the archive stays self-contained: fontconfig, gphoto, GSSAPI, Kerberos, netapi, pcap, SANE, libusb and CAPI. <!-- TODO verify: the exact reason per flag is not in the commit messages -->
 
-`--without-gstreamer` is the only flag that changes in 26.3.0-3 (see below).
+Versions 26.3.0-1 and 26.3.0-2 used `--without-gstreamer`. The 26.3.0-3 recipe enables GStreamer and disables Wine’s direct FFmpeg backend; FFmpeg is used through GStreamer instead.
 
 ### Compiler and linker flags
 
@@ -108,33 +109,32 @@ The archive has a single top folder, files in sorted order, owner `root:wheel`, 
 
 ## Naming
 
-The display name is **Cartouche Wine**. The id, tag and file names stay `wine-crossover-<version>-<revision>` (commit a3f4318), because installed users and the app's manifest refer to them. The name does not use "CrossOver" as a product name.
+The display name is **Cartouche Wine**. The id, tag and file names stay `wine-crossover-<version>-<revision>` (commit f9d04ad), because installed users and the app's manifest refer to them. The name does not use "CrossOver" as a product name.
 
 ## Changelog
 
 ### 26.3.0-3 (in progress)
 
-**GStreamer for media playback.** Not released. Not on a public branch yet. What is known:
+**GStreamer for media playback.** The recipe is on `main`; no 26.3.0-3 release has been published.
 
-- Wine's `winegstreamer` needs GStreamer to build, and today the recipe passes `--without-gstreamer`. Games that play video or some audio through Media Foundation need it.
-- The package must stay under LGPL-compatible terms.
-- Not decided: where the GStreamer libraries and plugins come from, which plugins are included, the environment variables the app must set, and the source offer text for them.
-
-<!-- TODO verify: update this section from the 26.3.0-3 branch when it is pushed -->
+- Builds GStreamer 1.24.4 from the pinned CodeWeavers source archive and FFmpeg 6.1.6 from a separately pinned source archive.
+- Bundles the selected plugins, their libraries and license files; includes FFmpeg sources in the release workflow.
+- Configures Wine with `--with-gstreamer --without-ffmpeg` and checks plugin loading with `check-gstreamer.sh`.
+- Full macOS compilation, relocation, prefix boot and game playback still need validation. Earlier Linux results are documented in [the implementation notes](26.3.0-3-gstreamer.md), alongside the remaining checks.
 
 ### 26.3.0-2 (prerelease)
 
-- **SDL3 bundled.** Homebrew's SDL2 is sdl2-compat and loads `libSDL3.dylib` at run time. `bundle-deps.sh` follows load commands only, so SDL3 was missing and `winebus` saw no controller. The build now bundles SDL3 and `check-sdl.sh` checks that SDL game controllers initialize in the build and in the unpacked archive. (94bb933)
-- **Wine Mono 10.4.1 and Wine Gecko 2.47.4 bundled**, so prefixes never offer a download. `build.sh` checks the versions against Wine's `addons.c`, `verify.sh` checks the files, `boot-check.sh` checks that Mono is used. (b59c925)
-- **dlopen check.** `check_dlopen.py` and `dlopen-allow.txt` catch libraries that are opened by name. First run names `libsteam_api` and `libd3dshared`, now allowed with reasons. (e539aa7, bf28813)
-- **Headless boot check.** It initializes a prefix, installs the addons in a second pass and runs `wine cmd` and `wine reg`. The winecfg window is timed only when a GUI session exists. (a262ff5, eb1ae1f and later boot-check commits)
-- **Licenses.** The license of every bundled library, Wine Mono and Wine Gecko goes into `share/licenses/`. `check-licenses.sh` fails without them. (537a78f)
-- **Source archives** of the bundled Homebrew libraries are attached to the release (LGPL source offer). (1d39f22)
-- **Display name** "Cartouche Wine". (a3f4318)
-- **Release publishing** happens from the repository's default branch. (c4c337c)
-- **Workflow actions** are pinned by commit and run on Node 24. (df406bd)
-- **collect-licenses retries** a formula's source fetch up to four times, because a GNU mirror can be broken. (e935404)
-- Known issue: on GitHub's `macos-15-intel` image of 2026-10-22, the first `wineboot` hangs for both this build and 26.3.0-1. The boot check reports `env-cannot-boot` and the boot must be tested on a real Mac. (8609624)
+- **SDL3 bundled.** Homebrew's SDL2 is sdl2-compat and loads `libSDL3.dylib` at run time. `bundle-deps.sh` follows load commands only, so SDL3 was missing and `winebus` saw no controller. The build now bundles SDL3 and `check-sdl.sh` checks that SDL game controllers initialize in the build and in the unpacked archive. (3f12db4)
+- **Wine Mono 10.4.1 and Wine Gecko 2.47.4 bundled**, so prefixes never offer a download. `build.sh` checks the versions against Wine's `addons.c`, `verify.sh` checks the files, `boot-check.sh` checks that Mono is used. (397cf08)
+- **dlopen check.** `check_dlopen.py` and `dlopen-allow.txt` catch libraries that are opened by name. First run names `libsteam_api` and `libd3dshared`, now allowed with reasons. (f1ff196, 237e9f0)
+- **Headless boot check.** It initializes a prefix, installs the addons in a second pass and runs `wine cmd` and `wine reg`. The winecfg window is timed only when a GUI session exists. (2b10e26, eb1ae1f and later boot-check commits)
+- **Licenses.** The license of every bundled library, Wine Mono and Wine Gecko goes into `share/licenses/`. `check-licenses.sh` fails without them. (7af8952)
+- **Source archives** of the bundled Homebrew libraries are attached to the release (LGPL source offer). (379b267)
+- **Display name** "Cartouche Wine". (f9d04ad)
+- **Release publishing** happens from the repository's default branch. (f0ad19e)
+- **Workflow actions** are pinned by commit and run on Node 24. (31ecbab)
+- **collect-licenses retries** a formula's source fetch up to four times, because a GNU mirror can be broken. (39adcc4)
+- Known issue: on GitHub's `macos-15-intel` image of 2026-10-22, the first `wineboot` hangs for both this build and 26.3.0-1. The boot check reports `env-cannot-boot` and the boot must be tested on a real Mac. (4c3a5dd)
 
 ### 26.3.0-1
 

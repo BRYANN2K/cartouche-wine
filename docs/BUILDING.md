@@ -2,7 +2,7 @@
 
 This document is for people who want to build the `wine-crossover-<version>-x86_64.tar.xz` archive on their own Mac. Every step comes from the scripts in `packaging/wine-crossover/`. CI runs the same scripts ([RELEASING.md](RELEASING.md)).
 
-A full build takes about an hour.
+The development recipe includes GStreamer and FFmpeg. Allow additional build time; a full macOS build of 26.3.0-3 is still pending validation.
 
 ## Prerequisites
 
@@ -10,7 +10,7 @@ A full build takes about an hour.
 | --- | --- |
 | An x86_64 process | `build.sh` exits unless `uname -m` is `x86_64`. CI uses a `macos-15-intel` runner. <!-- TODO verify: building on Apple silicon inside an `arch -x86_64` shell with Intel Homebrew in /usr/local; the script allows it but it was not tested for this documentation --> |
 | Xcode | The version in `pins.env` (`XCODE_APP`, now `/Applications/Xcode_16.4.app`). If the folder exists, `build.sh` sets `DEVELOPER_DIR` to it. |
-| Homebrew | With the formulas in `pins.env`: build tools `bison flex pkgconf`, link libraries `freetype gnutls molten-vk sdl2 sdl3`. |
+| Homebrew | With the formulas in `pins.env`: build tools `bison flex pkgconf meson ninja nasm`, link libraries `freetype gnutls molten-vk sdl2 sdl3`, and `glib` for GStreamer. |
 | Python 3 | For `check_dlopen.py`, `manifest_entry.py` and the tests. |
 | Network | To fetch the pinned downloads. |
 | Disk | Several GB for the sources, the build tree and the install tree. <!-- TODO verify: measured disk use --> |
@@ -25,10 +25,11 @@ The deployment target is macOS 15.0 (`MACOSX_DEPLOYMENT_TARGET` in `pins.env`).
 | --- | --- | --- |
 | `CX_VERSION` | `26.3.0` | CodeWeavers' CrossOver source version. |
 | `CX_SOURCE_URL`, `CX_SOURCE_SHA256` | see file | The LGPL tarball from CodeWeavers (149054023 bytes, Wine 11.0 inside). |
-| `BUILD_REVISION` | `2` | Bumped when the same sources are built again with a changed script or toolchain. |
+| `BUILD_REVISION` | `3` | Bumped when the same sources are built again with a changed script or toolchain. |
 | `LLVM_MINGW_VERSION` and hash | `20261006` | Cross compiler for the PE side. |
 | `XCODE_APP`, `MACOSX_DEPLOYMENT_TARGET` | Xcode 16.4, 15.0 | Toolchain. |
 | `BREW_BUILD_DEPS`, `BREW_LINK_DEPS` | see above | Homebrew formulas. Versions are whatever Homebrew has. They are recorded in `BUILDINFO.txt`. |
+| `GST_VERSION`, `FFMPEG_*` | 1.24.4, 6.1.6 | GStreamer from the CrossOver tarball; separately downloaded FFmpeg with SHA-256. |
 | `WINE_MONO_*`, `WINE_GECKO_*` | 10.4.1, 2.47.4 | Addons and their license files, with hashes. |
 
 A new CodeWeavers tarball means a new `CX_VERSION`, its SHA-256, and `BUILD_REVISION` back to 1.
@@ -46,6 +47,7 @@ All commands run from the repository root. `work/` is any folder you like.
 f=packaging/wine-crossover/fetch.sh
 d=work/downloads
 sh $f "$CX_SOURCE_URL" "$CX_SOURCE_SHA256" "$d/crossover-sources-$CX_VERSION.tar.gz"
+sh $f "$FFMPEG_URL" "$FFMPEG_SHA256" "$d/ffmpeg-$FFMPEG_VERSION.tar.xz"
 sh $f "$LLVM_MINGW_URL" "$LLVM_MINGW_SHA256" "$d/llvm-mingw-$LLVM_MINGW_VERSION.tar.xz"
 sh $f "$WINE_MONO_URL" "$WINE_MONO_SHA256" "$d/wine-mono-$WINE_MONO_VERSION-x86.tar.xz"
 sh $f "$WINE_GECKO_X86_URL" "$WINE_GECKO_X86_SHA256" "$d/wine-gecko-$WINE_GECKO_VERSION-x86.tar.xz"
@@ -60,7 +62,7 @@ The file names matter: `build.sh` looks for exactly these names and refuses to r
 ### 2. Install the Homebrew formulas
 
 ```sh
-brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS
+brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS
 ```
 
 ### 3. Build
@@ -78,13 +80,13 @@ What `build.sh` does, in order:
 3. Empties `src`, `build`, `deps`, `install` and `llvm-mingw` under the work folder, then unpacks the sources and llvm-mingw.
 4. Checks that `dlls/appwiz.cpl/addons.c` in the sources defines the Mono and Gecko versions in `pins.env`. If Wine asks for other versions, update the pins.
 5. Puts llvm-mingw, `bison` and `flex` first in `PATH`.
-6. Copies the five link libraries and every non-system dylib they load into `deps/lib` with `bundle-deps.sh`. Names become `@rpath/...`, and each copy is ad-hoc signed. `deps/origins.txt` records which keg each dylib came from.
+6. Builds GStreamer and FFmpeg with `build-gstreamer.sh`, then copies their libraries, plugins and inspection tool alongside the five link libraries and every non-system dylib they load into `deps/lib` with `bundle-deps.sh`. Names become `@rpath/...`, and each copy is ad-hoc signed. `deps/origins.txt` records which keg each dylib came from.
 7. Runs Wine's `configure` against that folder. [CHANGES.md](CHANGES.md) lists the flags and why.
 8. `make`, then `make install-lib` into `install/`.
 9. Copies `deps/lib` into `install/lib/`.
 10. Unpacks Wine Mono and Wine Gecko into `install/share/wine/mono` and `gecko`.
 11. Runs `collect-licenses.sh`: license files of every bundled formula go into `install/share/licenses/<formula>/`, their source archives into `work/brew-sources/`. Mono's and Gecko's licenses are copied from the pinned downloads.
-12. Runs the checks: `check-deps.sh`, `check_dlopen.py`, `check-sdl.sh`, `check-licenses.sh`.
+12. Runs the checks: `check-deps.sh`, `check_dlopen.py`, `check-sdl.sh`, `check-gstreamer.sh`, `check-licenses.sh`.
 13. Runs `install/bin/wine --version`.
 
 ### 4. Package
@@ -109,14 +111,14 @@ sh packaging/wine-crossover/package.sh work/install \
 sh packaging/wine-crossover/verify.sh out/wine-crossover-*-x86_64.tar.xz
 ```
 
-This checks the archive the way the app gets it: the checksum, one top folder, the expected files, Mono and Gecko, the four checks again, and `wine --version` in a scratch home. Then run the boot check:
+The verifier checks the archive the way the app gets it: the checksum, one top folder, the expected files, Mono and Gecko, the dependency, SDL, GStreamer and license checks again, and `wine --version` in a scratch home. Then run the boot check:
 
 ```sh
 mkdir -p work/runner && tar -xJf out/*-x86_64.tar.xz -C work/runner
 sh packaging/wine-crossover/boot-check.sh "work/runner/$(cat out/tag)" out/boot 180
 ```
 
-See [RELEASING.md](RELEASING.md) for what it checks and its options.
+See [RELEASING.md](RELEASING.md) for boot-check options and [26.3.0-3-gstreamer.md](26.3.0-3-gstreamer.md) for the GStreamer build and pending macOS validation.
 
 ### The script tests
 
