@@ -71,14 +71,16 @@ done
 gst_meson="$src/sources/gstreamer/subprojects/gstreamer/meson.build"
 [ -n "$dry" ] || grep -q "^  version : '$GST_VERSION',\$" "$gst_meson" \
     || { echo "build.sh: $gst_meson is not GStreamer $GST_VERSION; update pins.env" >&2; exit 1; }
-PATH="$work/llvm-mingw/bin:$PATH"
 
 if [ -n "$dry" ]; then brew() { echo "/usr/local/opt/$2"; }; fi
 for f in bison flex; do PATH="$(brew --prefix "$f")/bin:$PATH"; done
 export PATH
 
-# GStreamer and the LGPL FFmpeg under gst-libav, into $gst and $ffmpeg
+# GStreamer and the LGPL FFmpeg under gst-libav, into $gst and $ffmpeg. Built
+# before llvm-mingw joins PATH: its clang has no macOS SDK, and GStreamer's
+# parser needs Homebrew's bison (macOS has 2.3)
 sh "$here/build-gstreamer.sh" ${dry:+--dry-run} "$src/sources/gstreamer" "$ffmpeg_tar" "$work"
+PATH="$work/llvm-mingw/bin:$PATH"
 
 # The dylibs Wine links or dlopens, copied with @rpath names before configure
 # sees them, so the names it records are the bundled ones
