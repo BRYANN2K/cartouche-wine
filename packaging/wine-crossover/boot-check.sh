@@ -122,10 +122,20 @@ if [ "$rc" -ne 0 ]; then
         prc=0
         limited 600 "$out/wineboot-$variant.log" probe || prc=$?
         echo "boot-check: first boot with $variant: rc=$prc in $(( $(date +%s) - t )) s" >&2
+        [ "$variant" != reference-26.3.0-1 ] || ref_rc=$prc
         grep "err:\|could not load" "$out/wineboot-$variant.log" | head -n 5 >&2 || true
         "$vroot/bin/wineserver" -k 2>/dev/null || true
     done
     }
+    # The published 26.3.0-1 hanging the same way means this runner image cannot boot a
+    # prefix at all (seen on macos-15-intel from 2026-10-22): report it, do not block on it
+    if [ "${ref_rc:-}" = "$rc" ]; then
+        echo "boot-check: the published 26.3.0-1 fails the same way (rc=$rc) on this runner image;" \
+            "the boot is not checked here and must be checked on a Mac" >&2
+        echo "::warning::boot not checked: this runner image cannot boot a prefix (26.3.0-1 fails too)"
+        echo "result=env-cannot-boot rc=$rc" > "$out/boot.txt"
+        exit 0
+    fi
     fail "init-failed rc=$rc" "$out/wineboot.log" "prefix initialization exited $rc"
 fi
 echo "boot-check: prefix initialized in $init_seconds s"
