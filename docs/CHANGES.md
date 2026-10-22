@@ -6,7 +6,7 @@ This document is for people who want to know exactly what Cartouche Wine changes
 
 **None.** `build.sh` unpacks `crossover-sources-26.3.0.tar.gz` (SHA-256 `ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872`) and builds `sources/wine` as it is. No `patch` step exists. Anyone can rebuild the binaries from CodeWeavers' tarball and the scripts in this repository.
 
-Upstream behavior that Cartouche relies on lives in CodeWeavers' sources, not here. One example: CodeWeavers' Rosetta 2 workarounds for the 32-bit syscall thunk (marked "CW HACK" in their sources). <!-- TODO verify: that the CW HACK 20760 change is present in the 26.3 tarball; the research note says "appears to be" -->
+Upstream behavior that Cartouche relies on lives in CodeWeavers' sources, not here. One example: CodeWeavers' Rosetta 2 workarounds for the 32-bit syscall thunk (marked "CW HACK" in their sources). `crossover-sources-26.3.0.tar.gz` (the pinned SHA-256) carries `CW HACK 20760` in `sources/wine/dlls/wow64cpu/cpu.c`: under Rosetta 2 the 32-to-64 syscall thunk returns with `lretq`, which avoids a SIGUSR1 race ([WineHQ bug 60494](https://bugs.winehq.org/show_bug.cgi?id=60494)).
 
 ## Build configuration
 
