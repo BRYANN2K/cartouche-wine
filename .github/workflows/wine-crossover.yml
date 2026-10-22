@@ -117,7 +117,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/runner"
           tar -xJf out/*-x86_64.tar.xz -C "$RUNNER_TEMP/runner"
           launchctl managername || true
-          sh packaging/wine-crossover/boot-check.sh "$RUNNER_TEMP/runner/$(cat out/tag)" out/boot 180
+          BOOT_DIAG=1 sh packaging/wine-crossover/boot-check.sh "$RUNNER_TEMP/runner/$(cat out/tag)" out/boot 180
 
       - name: Keep the build
         if: always()

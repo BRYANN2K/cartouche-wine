@@ -97,6 +97,7 @@ if [ "$rc" -ne 0 ]; then
     } >&2 || true
     # Which part hangs: the published 26.3.0-1 on this same runner image, then this
     # build with its bundled addon folders moved away, each in its own fresh prefix
+    [ "${BOOT_DIAG:-0}" = 1 ] && {
     ref_url=https://github.com/BRYANN2K/cartouche-wine/releases/download/wine-crossover-26.3.0-1/wine-crossover-26.3.0-1-x86_64.tar.xz
     ref_sha=60400817826a053599193aa290d4e24e97213a743195f4187400bf9c74906887
     mkdir -p "$work/ref"
@@ -112,7 +113,8 @@ if [ "$rc" -ne 0 ]; then
         export WINEPREFIX="$work/prefix-$variant"
         case "$variant" in
             reference-26.3.0-1) [ -n "$ref_root" ] || continue; vroot=$ref_root ;;
-            no-addon-folders) vroot=$root; mv "$root/share/wine/mono" "$work/mono.off"; mv "$root/share/wine/gecko" "$work/gecko.off" ;;
+            no-addon-folders) vroot=$root; mv "$root/share/wine/mono" "$work/mono.off" 2>/dev/null || true
+                mv "$root/share/wine/gecko" "$work/gecko.off" 2>/dev/null || true ;;
         esac
         probe() { WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=err+all "$vroot/bin/wine" wineboot -i \
             && "$vroot/bin/wineserver" -w; }
@@ -123,6 +125,7 @@ if [ "$rc" -ne 0 ]; then
         grep "err:\|could not load" "$out/wineboot-$variant.log" | head -n 5 >&2 || true
         "$vroot/bin/wineserver" -k 2>/dev/null || true
     done
+    }
     fail "init-failed rc=$rc" "$out/wineboot.log" "prefix initialization exited $rc"
 fi
 echo "boot-check: prefix initialized in $init_seconds s"
