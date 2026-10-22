@@ -312,15 +312,25 @@ def fake_licenses(install):
 
 
 def fake_runner(work, boot_secs=0, boot_rc=0, mono="mono runtime is at Z:\\wine\\mono", registry=True,
-                cmd="Microsoft Windows 10.0.19045"):
+                cmd="Microsoft Windows 10.0.19045", needs_no_display=False, name="runner", addons=True):
     """A runner whose wine sleeps through the prefix install, writes the registry,
-    answers cmd and reg, and never shows a window; wineserver exits at once."""
-    root = work / "runner"
+    answers cmd and reg, and never shows a window; wineserver exits at once.
+    With needs_no_display, wineboot hangs up like on the macos-15-intel image
+    unless winemac.drv is disabled."""
+    root = work / name
     hives = "for f in system.reg user.reg userdef.reg; do echo WINE > \"$WINEPREFIX/$f\"; done" if registry else ":"
+    hang = ""
+    if needs_no_display:
+        hang = """case "$WINEDLLOVERRIDES" in *winemac.drv=*) ;; *)
+        echo '0024:err:environ:run_wineboot boot event wait timed out' >&2; exit 53 ;; esac
+        """
+    if addons:
+        for d in ("mono/wine-mono-10.4.1", "gecko/wine-gecko-2.47.4-x86", "gecko/wine-gecko-2.47.4-x86_64"):
+            (root / "share/wine" / d).mkdir(parents=True, exist_ok=True)
     write(root / "bin/wine", f"""#!/bin/sh
 case "$1" in
     --version) echo "wine-11.0 (fake)" ;;
-    wineboot) echo 'trace:mscoree:install_wine_mono {mono}' >&2; sleep {boot_secs}
+    wineboot) {hang}echo 'trace:mscoree:install_wine_mono {mono}' >&2; sleep {boot_secs}
         mkdir -p "$WINEPREFIX"; {hives}; exit {boot_rc} ;;
     cmd) echo '{cmd}' ;;
     reg) echo '    CurrentBuildNumber    REG_SZ    19045' ;;
@@ -383,6 +393,47 @@ class BootCheck(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("initialization exited 3", r.stderr)
         self.assertIn("result=init-failed rc=3", self.result())
+
+    def test_a_failed_boot_dumps_processes_and_system32(self):
+        r = self.boot(1, boot_rc=3)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("== processes", r.stderr)
+        self.assertIn("== system32:", (self.out / "hung.txt").read_text())
+        self.assertTrue((self.out / "hung-system32.txt").exists())
+
+    def diag(self, runner, reference):
+        env = dict(os.environ, BOOT_GUI="0", BOOT_CMD_LIMIT="5", BOOT_DIAG="1", BOOT_DIAG_LIMIT="20",
+                   BOOT_REF_ROOT=str(fake_runner(self.work, **reference)))
+        return run("sh", SCRIPTS / "boot-check.sh", fake_runner(self.work, **runner), self.out, 1, env=env)
+
+    def test_runs_the_checks_without_display_driver_when_the_reference_hangs_too(self):
+        r = self.diag(dict(needs_no_display=True), dict(name="ref", needs_no_display=True))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("first boot with no-display-driver: rc=0", r.stderr)
+        self.assertIn("::warning::the macOS display driver hangs wineboot", r.stdout)
+        self.assertIn("cmd and reg ran", r.stdout)
+        self.assertIn("result=pass mode=no-display-driver", self.result())
+
+    def test_still_checks_the_bundled_mono_without_display_driver(self):
+        r = self.diag(dict(needs_no_display=True, mono="mono runtime not found"), dict(name="ref", needs_no_display=True))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("result=addon-download", self.result())
+
+    def test_env_cannot_boot_when_nothing_boots_on_the_runner(self):
+        r = self.diag(dict(boot_rc=53), dict(name="ref", boot_rc=53))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("result=env-cannot-boot rc=53", self.result())
+
+    def test_env_cannot_boot_still_needs_the_bundled_addons(self):
+        r = self.diag(dict(boot_rc=53, addons=False), dict(name="ref", boot_rc=53))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("result=addons-missing", self.result())
+
+    def test_fails_when_only_this_build_cannot_boot(self):
+        r = self.diag(dict(needs_no_display=True), dict(name="ref"))
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("first boot with reference-26.3.0-1: rc=0", r.stderr)
+        self.assertIn("result=init-failed rc=53", self.result())
 
     @unittest.skipUnless(sys.platform == "darwin", "the window check uses swiftc and CoreGraphics")
     def test_with_a_gui_session_times_out_when_no_window_shows(self):
