@@ -164,3 +164,11 @@ jobs:
             --title "Cartouche Wine $CX_VERSION-$BUILD_REVISION" --notes-file out/SOURCE.md \
             out/"$TAG"-x86_64.tar.xz out/"$TAG"-x86_64.tar.xz.sha256 out/manifest-entry.json \
             out/SOURCE.md "out/crossover-sources-$CX_VERSION.tar.gz" out/brew-sources/*
+
+      # Nothing reaches the app from here: the runner manifest is promoted by hand
+      # once the build has been tested on a real Mac (manifest/README.md)
+      - name: Remind to promote after testing
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          echo "::notice::$TAG is a prerelease. Boot it and pass a controller test on a real Mac, then run the runner-manifest workflow with build_id=$TAG and confirm_tested to offer it in the app."
