@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Prints the runner manifest entry for one built archive.
 
-The entry goes into app/Sources/NotProtonApp/Resources/runners.json, whose
+The entry goes into manifest/runners.json (via the runner-manifest workflow)
+and the app's bundled runners.json, whose
 format RunnerManifest.swift reads. Size and SHA-256 come from the file itself.
 """
 import argparse

@@ -1,0 +1,173 @@
+name: runner-manifest
+
+# Promotes a tested Cartouche Wine release into the runner manifest the app
+# reads once a day: adds the release's manifest-entry.json to
+# manifest/runners.json, raises the revision, signs the exact bytes with the
+# Sparkle EdDSA key and publishes runners.json + runners.json.sig on the
+# `manifest` release, then commits the file back (manifest/README.md).
+#
+# Nothing promotes a build on its own: GitHub's macOS Intel image can no longer
+# boot a prefix, so the maintainer runs this only after the build booted and
+# passed a controller test on a real Mac.
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Release to promote, e.g. wine-crossover-26.3.0-3
+        required: true
+        type: string
+      confirm_tested:
+        description: I booted this build and passed a controller test on a real Mac
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - manifest/**
+      - .github/workflows/runner-manifest.yml
+
+permissions:
+  contents: read
+
+# Two promotions at once would both bump from the same published revision
+concurrency:
+  group: runner-manifest-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The app's SUPublicEDKey: the signing key must match it
+  APP_PUBLIC_KEY: GQF06ayCCpIxh8XlQPQYWTwbYO2SckfWqr9rYCuJrqI=
+  CRYPTOGRAPHY: cryptography==50.0.1
+
+jobs:
+  check:
+    name: check the manifest and its script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cryptography
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "$CRYPTOGRAPHY"
+
+      - name: Run the script tests
+        run: '"$RUNNER_TEMP/venv/bin/python" -m unittest discover -s manifest/tests -p "test_*.py"'
+
+      - name: Check manifest/runners.json
+        run: python3 manifest/runner_manifest.py check manifest/runners.json
+
+  publish:
+    name: promote ${{ inputs.build_id }}
+    needs: check
+    if: github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # The release environment gates access to SPARKLE_PRIVATE_KEY
+    environment: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      BUILD_ID: ${{ inputs.build_id }}
+      CONFIRM_TESTED: ${{ inputs.confirm_tested }}
+      GH_TOKEN: ${{ github.token }}
+      MANIFEST: manifest/runners.json
+    steps:
+      - name: Require the Mac test
+        run: |
+          if [ "$CONFIRM_TESTED" != true ]; then
+            echo "::error::Boot $BUILD_ID and pass a controller test on a real Mac first, then run again with confirm_tested"
+            exit 1
+          fi
+          if ! printf '%s\n' "$BUILD_ID" | grep -Eqx 'wine-crossover-[0-9][0-9.]*-[0-9]+'; then
+            echo "::error::$BUILD_ID is not a Cartouche Wine release tag (wine-crossover-<version>-<revision>)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cryptography
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet "$CRYPTOGRAPHY"
+
+      - name: Fetch the build's manifest entry
+        run: |
+          mkdir -p "$RUNNER_TEMP/entry"
+          gh release download "$BUILD_ID" --pattern manifest-entry.json --dir "$RUNNER_TEMP/entry"
+          cat "$RUNNER_TEMP/entry/manifest-entry.json"
+          # The entry must pin the archive that is actually on the release
+          url=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' "$RUNNER_TEMP/entry/manifest-entry.json")
+          size=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["size"])' "$RUNNER_TEMP/entry/manifest-entry.json")
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$BUILD_ID" --jq '.assets[] | "\(.name) \(.size)"' > "$RUNNER_TEMP/assets.txt"
+          if ! grep -Fqx "${url##*/} $size" "$RUNNER_TEMP/assets.txt"; then
+            echo "::error::$BUILD_ID has no asset ${url##*/} of $size bytes"
+            exit 1
+          fi
+
+      - name: Fetch the published manifest
+        run: |
+          mkdir -p "$RUNNER_TEMP/published"
+          if gh release view manifest >/dev/null 2>&1; then
+            gh release download manifest --pattern runners.json --dir "$RUNNER_TEMP/published"
+            echo "PUBLISHED=$RUNNER_TEMP/published/runners.json" >> "$GITHUB_ENV"
+          else
+            echo "::notice::No manifest release yet; this run creates it"
+          fi
+
+      - name: Add the build and raise the revision
+        run: |
+          python3 manifest/runner_manifest.py add-entry "$MANIFEST" \
+            --from "$RUNNER_TEMP/entry/manifest-entry.json" --build-id "$BUILD_ID"
+          if [ -n "${PUBLISHED:-}" ]; then
+            python3 manifest/runner_manifest.py bump "$MANIFEST" --published "$PUBLISHED"
+            python3 manifest/runner_manifest.py check "$MANIFEST" --published "$PUBLISHED"
+          else
+            python3 manifest/runner_manifest.py bump "$MANIFEST"
+            python3 manifest/runner_manifest.py check "$MANIFEST"
+          fi
+          git diff -- "$MANIFEST"
+
+      - name: Sign runners.json
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY must be set in the release environment (manifest/README.md)"
+            exit 1
+          fi
+          "$RUNNER_TEMP/venv/bin/python" manifest/runner_manifest.py sign "$MANIFEST" \
+            --out "$RUNNER_TEMP/runners.json.sig" --public-key "$APP_PUBLIC_KEY"
+          "$RUNNER_TEMP/venv/bin/python" manifest/runner_manifest.py verify "$MANIFEST" \
+            "$RUNNER_TEMP/runners.json.sig" --public-key "$APP_PUBLIC_KEY"
+
+      - name: Commit manifest/runners.json
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          revision=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["revision"])' "$MANIFEST")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$MANIFEST"
+          git commit -m "runner manifest: revision $revision, promotes $BUILD_ID"
+          git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
+
+      - name: Publish on the manifest release
+        run: |
+          cp "$MANIFEST" "$RUNNER_TEMP/runners.json"
+          # A prerelease is never "latest", so the Wine releases stay in front
+          if ! gh release view manifest >/dev/null 2>&1; then
+            gh release create manifest --prerelease --latest=false \
+              --title "Runner manifest" \
+              --notes "The signed list of Wine builds the Cartouche app offers in Settings > Runners. Published by .github/workflows/runner-manifest.yml; see manifest/README.md."
+          fi
+          gh release upload manifest "$RUNNER_TEMP/runners.json" "$RUNNER_TEMP/runners.json.sig" --clobber
+          echo "Published runners.json revision $(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["revision"])' "$MANIFEST") with $BUILD_ID" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check what the app will download
+        run: |
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/manifest"
+          mkdir -p "$RUNNER_TEMP/live"
+          curl -fsSL --retry 5 --retry-delay 10 -o "$RUNNER_TEMP/live/runners.json" "$base/runners.json"
+          curl -fsSL --retry 5 --retry-delay 10 -o "$RUNNER_TEMP/live/runners.json.sig" "$base/runners.json.sig"
+          cmp "$RUNNER_TEMP/live/runners.json" "$MANIFEST"
+          "$RUNNER_TEMP/venv/bin/python" manifest/runner_manifest.py verify "$RUNNER_TEMP/live/runners.json" \
+            "$RUNNER_TEMP/live/runners.json.sig" --public-key "$APP_PUBLIC_KEY"
