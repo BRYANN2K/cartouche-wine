@@ -70,15 +70,16 @@ It writes `boot.txt` and its logs into the output folder. The `result=` line is 
 | Result | Meaning |
 | --- | --- |
 | `pass mode=headless` or `pass mode=gui` | All checks passed. |
+| `pass mode=no-display-driver` | Prefix, addons and console checks passed with `winemac.drv` disabled after the reference build failed too. GUI behavior still needs a real Mac test. |
 | `init-timeout`, `init-failed`, `addons-timeout`, `addons-failed` | The prefix or the addons did not finish. |
 | `addon-download` | wineboot did not use the bundled Mono. |
 | `no-registry`, `cmd-failed`, `reg-failed` | A later step failed. |
 | `timeout` | No winecfg window in time (GUI only). |
 | `env-cannot-boot` | The first boot failed, and the published 26.3.0-1 fails the same way on this runner. The check warns and exits 0. |
 
-With `BOOT_DIAG=1`, a failed first boot also boots the published 26.3.0-1 (checked by SHA-256) and this build with its `mono` and `gecko` folders moved away, each in a fresh prefix with a 600 s limit. This tells a runner problem from a build problem.
+With `BOOT_DIAG=1`, a failed first boot also boots the published 26.3.0-1 (checked by SHA-256) and this build with `winemac.drv` disabled, each in a fresh prefix. `BOOT_DIAG_LIMIT` defaults to 600 s. If the reference fails the same way but the display-free boot works, the remaining addon, registry and console checks run in that prefix. Failed boots also save loaded-DLL logs, process samples and prefix file listings for diagnosis.
 
-**Known limit.** On the `macos-15-intel` image of 2026-10-22, the first `wineboot` hangs for both 26.3.0-1 and the new build. The image changed, not the build. The check therefore cannot prove a boot in CI. Test every release on a Mac before step 4.
+**Known limit.** On the `macos-15-intel` image of 2026-10-22, the first `wineboot` hangs for both 26.3.0-1 and the new build. The reference failure points to a runner environment problem. A pass with the display driver disabled still cannot prove GUI behavior in CI. Test every release on a Mac before step 4.
 
 ### Job `publish` (ubuntu-latest, `contents: write`)
 
