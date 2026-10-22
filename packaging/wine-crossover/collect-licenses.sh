@@ -53,7 +53,13 @@ while read -r leaf path; do
         if [ -f "$f" ] && is_license "$f"; then cp "$f" "$dest/$formula/"; fi
     done
 
-    brew fetch --quiet --build-from-source "$formula" > /dev/null
+    # ftpmirror.gnu.org picks a mirror per request, and one can be broken: try a few times
+    n=0
+    until brew fetch --quiet --build-from-source "$formula" > /dev/null; do
+        n=$((n + 1))
+        [ "$n" -lt 4 ] || { echo "collect-licenses: could not fetch the source of $formula" >&2; exit 1; }
+        sleep 10
+    done
     src=$(brew --cache --build-from-source "$formula")
     if [ -n "$sources" ]; then
         if [ -d "$src" ]; then
