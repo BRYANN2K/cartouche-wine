@@ -61,7 +61,7 @@ jobs:
           path: work/downloads
           key: wine-crossover-downloads-${{ hashFiles('packaging/wine-crossover/pins.env') }}
 
-      - name: Fetch the source tarball, llvm-mingw, Wine Mono and Wine Gecko
+      - name: Fetch the source tarball, llvm-mingw, Wine Mono, Wine Gecko and FFmpeg
         run: |
           . packaging/wine-crossover/pins.env
           sh packaging/wine-crossover/fetch.sh "$CX_SOURCE_URL" "$CX_SOURCE_SHA256" \
@@ -80,12 +80,14 @@ jobs:
             "work/downloads/wine-gecko-$WINE_GECKO_VERSION-LICENSE"
           sh packaging/wine-crossover/fetch.sh "$WINE_GECKO_LICENSE_HTML_URL" "$WINE_GECKO_LICENSE_HTML_SHA256" \
             "work/downloads/wine-gecko-$WINE_GECKO_VERSION-license.html"
+          sh packaging/wine-crossover/fetch.sh "$FFMPEG_URL" "$FFMPEG_SHA256" \
+            "work/downloads/ffmpeg-$FFMPEG_VERSION.tar.xz"
 
       - name: Install the Homebrew formulas
         run: |
           . packaging/wine-crossover/pins.env
           # shellcheck disable=SC2086
-          brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS
+          brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS
 
       - name: Build
         run: sh packaging/wine-crossover/build.sh "$PWD/work"
@@ -101,6 +103,8 @@ jobs:
           # The LGPL source offer for the bundled Homebrew libraries
           mkdir -p out/brew-sources
           for f in work/brew-sources/*; do cp "$f" "out/brew-sources/brew-$(basename "$f")"; done
+          # and for the FFmpeg under gst-libav (GStreamer's is in the CodeWeavers tarball)
+          cp "work/downloads/ffmpeg-$FFMPEG_VERSION.tar.xz" out/
           echo "tag=$(cat out/tag)" >> "$GITHUB_OUTPUT"
           cat out/manifest-entry.json >> "$GITHUB_STEP_SUMMARY"
 
@@ -163,4 +167,5 @@ jobs:
           gh release create "$TAG" --prerelease --latest=false \
             --title "Cartouche Wine $CX_VERSION-$BUILD_REVISION" --notes-file out/SOURCE.md \
             out/"$TAG"-x86_64.tar.xz out/"$TAG"-x86_64.tar.xz.sha256 out/manifest-entry.json \
-            out/SOURCE.md "out/crossover-sources-$CX_VERSION.tar.gz" out/brew-sources/*
+            out/SOURCE.md "out/crossover-sources-$CX_VERSION.tar.gz" "out/ffmpeg-$FFMPEG_VERSION.tar.xz" \
+            out/brew-sources/*

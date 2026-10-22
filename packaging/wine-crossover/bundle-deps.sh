@@ -2,18 +2,43 @@
 # Copies dylibs and every non-system dylib they load into one folder, and makes
 # them find each other through @rpath, so the package needs nothing from Homebrew.
 #
-#   ./bundle-deps.sh [--origins <file>] <out folder> <dylib>...
+#   ./bundle-deps.sh [--origins <file>] [--search <dir>]... [--place <dir> <rpath> <file>]...
+#                    <out folder> <dylib>...
 #
 # Wine is then configured against this folder, so the library names it dlopens
-# are @rpath names too. --origins appends "<dylib name> <real path it was
-# copied from>" lines, which collect-licenses.sh reads.
+# are @rpath names too. --origins appends "<file name> <real path it was
+# copied from>" lines, which collect-licenses.sh reads. --search adds a folder
+# where @rpath dependencies are looked for. --place copies a file that is not a
+# library of <out folder> (a GStreamer plugin, a tool) into <dir> instead,
+# gives it the LC_RPATH <rpath> that leads to <out folder>, and bundles what it
+# loads into <out folder>.
 set -eu
 
 origins=/dev/null
-if [ "${1:-}" = --origins ]; then origins=$2; shift 2; fi
-[ $# -ge 2 ] || { echo "usage: bundle-deps.sh [--origins <file>] <out folder> <dylib>..." >&2; exit 2; }
+search=
+tab=$(printf '\t')
+placed=$(mktemp)
+queue=$(mktemp)
+done_list=$(mktemp)
+trap 'rm -f "$queue" "$queue.next" "$done_list" "$placed"' EXIT
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --origins) origins=$2; shift 2 ;;
+        --search) search="$search
+$2"; shift 2 ;;
+        --place)
+            [ $# -ge 4 ] || { echo "bundle-deps: --place needs <dir> <rpath> <file>" >&2; exit 2; }
+            mkdir -p "$2"
+            printf '%s\t%s\t%s\n' "$(basename "$4")" "$(cd "$2" && pwd -P)" "$3" >> "$placed"
+            echo "$4" >> "$queue"
+            shift 4 ;;
+        *) break ;;
+    esac
+done
+[ $# -ge 1 ] || { echo "usage: bundle-deps.sh [--origins <file>] [--search <dir>]... [--place <dir> <rpath> <file>]... <out folder> <dylib>..." >&2; exit 2; }
 out=$1
 shift
+[ $# -ge 1 ] || [ -s "$placed" ] || { echo "bundle-deps: nothing to bundle" >&2; exit 2; }
 mkdir -p "$out"
 out=$(cd "$out" && pwd -P)
 
@@ -39,7 +64,7 @@ locate() {
     case "$1" in
         @loader_path/*) echo "$dir/${1#@loader_path/}" ;;
         @rpath/*)
-            for d in "$dir" "$real" "$out"; do
+            for d in "$dir" "$real" "$out" $search; do
                 if [ -f "$d/${1#@rpath/}" ]; then echo "$d/${1#@rpath/}"; return; fi
             done
             echo "bundle-deps: cannot find $1 needed by $2" >&2
@@ -48,9 +73,6 @@ locate() {
     esac
 }
 
-queue=$(mktemp)
-done_list=$(mktemp)
-trap 'rm -f "$queue" "$done_list"' EXIT
 for lib in "$@"; do echo "$lib" >> "$queue"; done
 
 while [ -s "$queue" ]; do
@@ -62,10 +84,31 @@ while [ -s "$queue" ]; do
     [ -f "$lib" ] || { echo "bundle-deps: $lib does not exist" >&2; exit 1; }
     echo "$leaf $(realpath "$lib")" >> "$origins"
 
-    copy="$out/$leaf"
+    place=$(awk -F '\t' -v l="$leaf" '$1 == l { print $2 "\t" $3; exit }' "$placed")
+    if [ -n "$place" ]; then
+        copy="${place%%$tab*}/$leaf"
+    else
+        copy="$out/$leaf"
+    fi
     cp -fL "$lib" "$copy"
     chmod u+w "$copy"
-    install_name_tool -id "@rpath/$leaf" "$copy" 2>/dev/null
+    # Meson keeps the -L folders of pkg-config dependencies as LC_RPATH: drop
+    # every search path into the build machine
+    for path in $(otool -l "$copy" | awk '/cmd LC_RPATH/ { getline; getline; print $2 }'); do
+        case "$path" in
+            @*) ;;
+            *) install_name_tool -delete_rpath "$path" "$copy" ;;
+        esac
+    done
+    if [ -n "$place" ]; then
+        # A plugin or a tool must find the libraries in <out folder>; a tool
+        # or a bundle has no install name to set
+        rpath=${place#*$tab}
+        otool -l "$copy" | grep -q "path $rpath (" || install_name_tool -add_rpath "$rpath" "$copy"
+        install_name_tool -id "@rpath/$leaf" "$copy" 2>/dev/null || true
+    else
+        install_name_tool -id "@rpath/$leaf" "$copy" 2>/dev/null
+    fi
     for dep in $(deps "$lib"); do
         is_system "$dep" && continue
         found=$(locate "$dep" "$lib")

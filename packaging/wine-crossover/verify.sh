@@ -1,7 +1,8 @@
 #!/bin/sh
 # Checks a packaged Cartouche Wine the way the app will get it: the archive
 # matches its .sha256, unpacks into one folder with the notices and the pinned
-# Wine Mono and Gecko, depends on nothing outside itself, and its wine runs.
+# Wine Mono and Gecko, depends on nothing outside itself, its GStreamer plugins
+# load from inside it (check-gstreamer.sh), and its wine runs.
 #
 #   ./verify.sh <archive.tar.xz>
 #
@@ -26,7 +27,8 @@ roots=$(ls "$work")
 [ "$(echo "$roots" | wc -l | tr -d ' ')" = 1 ] || fail "the archive has more than one top folder: $roots"
 root="$work/$roots"
 for f in bin/wine bin/wineserver lib/wine/x86_64-unix/wine share/wine/wine.inf \
-    LICENSE COPYING.LIB SOURCE.md; do
+    LICENSE COPYING.LIB SOURCE.md lib/wine/x86_64-unix/winegstreamer.so \
+    share/licenses/gstreamer/COPYING.gst-libav share/licenses/ffmpeg/COPYING.LGPLv2.1; do
     [ -e "$root/$f" ] || fail "$roots/$f is missing"
 done
 for arch in x86_64-windows i386-windows; do
@@ -41,6 +43,7 @@ sh "$here/check-deps.sh" "$root"
 python3 "$here/check_dlopen.py" "$root"
 sh "$here/check-sdl.sh" "$root"
 sh "$here/check-licenses.sh" "$root"
+sh "$here/check-gstreamer.sh" "$root"
 
 # A scratch home, so nothing from this machine's Wine setup is read
 home="$work/home"
