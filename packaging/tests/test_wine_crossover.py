@@ -461,7 +461,7 @@ class Licenses(unittest.TestCase):
     """check-licenses.sh and collect-licenses.sh on fake trees and a fake brew."""
 
     def setUp(self):
-        self.work = pathlib.Path(tempfile.mkdtemp(prefix="licenses-test-"))
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix="licenses-test-")).resolve()
         self.addCleanup(shutil.rmtree, self.work)
         self.root = self.work / "pkg"
         for name in ("libSDL2-2.0.0.dylib", "libSDL3.dylib"):
