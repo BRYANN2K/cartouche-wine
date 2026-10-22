@@ -43,7 +43,7 @@ tar -xJf wine-crossover-26.3.0-2-x86_64.tar.xz
 BOOT_DIAG=1 sh /path/to/cartouche-wine/packaging/wine-crossover/boot-check.sh wine-crossover-26.3.0-2 ./boot-out 180
 ```
 
-It writes `boot.txt`, `wineboot.log` and `addons.log` into `boot-out/`. `boot.txt` has a `result=` line (see [docs/RELEASING.md](docs/RELEASING.md#the-boot-check)). On a failure it also prints the first error lines and, with `BOOT_DIAG=1`, boots the published 26.3.0-1 for comparison.
+It writes `boot.txt`, `wineboot.log` and `addons.log` into `boot-out/`. `boot.txt` has a `result=` line (see [docs/RELEASING.md](docs/RELEASING.md#the-boot-check)). On a failure it also prints the first error lines and writes `hung.txt` (the Wine processes still running and the prefix's `system32`). With `BOOT_DIAG=1` it boots the published 26.3.0-1 and this build with the display driver off, for comparison.
 
 ## Change the build
 

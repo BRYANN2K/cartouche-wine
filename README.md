@@ -60,7 +60,7 @@ The full list, with commits and checks, is in [docs/CHANGES.md](docs/CHANGES.md)
 | Wine laid out like CrossOver (`bin/`, `lib/wine/<arch>-unix\|windows/`, `share/wine/`) | Cartouche's run script and its ntdll patcher look for files there. |
 | Display name "Cartouche Wine"; ids, tags and file names stay `wine-crossover-*` | The name must say that this is not CrossOver. Renaming ids would break installed users. |
 | A scan that fails on Apple Game Porting Toolkit files (`packaging/redist-scan.sh`) | Apple's license forbids redistributing them. |
-| In progress for 26.3.0-3: GStreamer | Media playback in games (Media Foundation) needs Wine's `winegstreamer`. 26.3.0-2 builds `--without-gstreamer`. |
+| GStreamer 1.24.4 from CodeWeavers' own tarball, 21 LGPL plugins, over an LGPL decoders-only FFmpeg 6.1.6 (26.3.0-3, not released yet) | Games play their videos through Media Foundation and DirectShow, which need Wine's `winegstreamer`. 26.3.0-2 and earlier build `--without-gstreamer`. Building the tarball's GStreamer keeps one source offer and only LGPL code; `check-gstreamer.sh` proves every plugin loads from the package. |
 
 ## What is inside a release archive
 
@@ -72,21 +72,25 @@ Each release `wine-crossover-<version>-<revision>` has these assets:
 | `...-x86_64.tar.xz.sha256` | Checksum of the archive. |
 | `manifest-entry.json` | The entry (URL, size, SHA-256) the app pins. |
 | `SOURCE.md` | The source offer, also inside the archive. |
-| `crossover-sources-<version>.tar.gz` | A copy of CodeWeavers' source tarball. |
+| `crossover-sources-<version>.tar.gz` | A copy of CodeWeavers' source tarball. It is also the source of the bundled GStreamer. |
+| `ffmpeg-<version>.tar.xz` | The FFmpeg source under gst-libav (from 26.3.0-3). |
 | `brew-<formula>-<version>.<ext>` | The source of each bundled Homebrew library. |
 
 The archive unpacks into one folder named like the release:
 
 ```text
-wine-crossover-26.3.0-2/
+wine-crossover-26.3.0-3/
   bin/                      wine, wineserver and friends
-  lib/*.dylib               bundled libraries (FreeType, GnuTLS, MoltenVK, SDL2, SDL3, and their dependencies)
-  lib/wine/x86_64-unix/     Wine's Unix side (x86_64, run by Rosetta 2)
+  lib/*.dylib               bundled libraries (FreeType, GnuTLS, MoltenVK, SDL2, SDL3, GStreamer,
+                            FFmpeg, GLib, and their dependencies)
+  lib/gstreamer-1.0/        the GStreamer plugins winegstreamer loads (from 26.3.0-3)
+  libexec/gstreamer-1.0/    gst-inspect-1.0, for the checks and support (not on PATH)
+  lib/wine/x86_64-unix/     Wine's Unix side (x86_64, run by Rosetta 2), winegstreamer.so included
   lib/wine/x86_64-windows/  PE modules, 64-bit
   lib/wine/i386-windows/    PE modules, 32-bit
   share/wine/               wine.inf, mono/ and gecko/ addons
-  share/licenses/<package>/ licenses of bundled libraries, Wine Mono and Wine Gecko
-  share/licenses/dylibs.txt which dylib comes from which package
+  share/licenses/<package>/ licenses of bundled libraries, GStreamer, FFmpeg, Wine Mono and Wine Gecko
+  share/licenses/dylibs.txt which dylib, plugin or tool comes from which package
   share/licenses/formulas.txt formulas and versions
   LICENSE COPYING.LIB AUTHORS   Wine's notices
   SOURCE.md                 where to get the source
@@ -125,11 +129,11 @@ Notes:
 
 ## Building from source
 
-You need an x86_64 environment with Xcode 16.4, Homebrew and about an hour. The short version:
+You need an x86_64 environment with Xcode 16.4, Homebrew and about an hour and a half. The short version:
 
 ```sh
 . packaging/wine-crossover/pins.env
-brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS
+brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS
 # download and verify the pinned files with packaging/wine-crossover/fetch.sh, then:
 sh packaging/wine-crossover/build.sh "$PWD/work"
 ```
@@ -140,7 +144,7 @@ sh packaging/wine-crossover/build.sh "$PWD/work"
 
 Two workflows run in this repository.
 
-1. **`wine-crossover`** builds, checks and, on request, publishes a prerelease. It needs no secret. The checks are: the script tests, a dry run, `verify.sh`, the dlopen and license checks, the Game Porting Toolkit scan and the boot check.
+1. **`wine-crossover`** builds, checks and, on request, publishes a prerelease. It needs no secret. The checks are: the script tests, a dry run, `verify.sh`, the dlopen, license and GStreamer checks, the Game Porting Toolkit scan and the boot check.
 2. **`runner-manifest`** promotes a tested release into the signed manifest the app reads. It runs in the `release` environment, which holds the **`SPARKLE_PRIVATE_KEY`** secret. That secret is the same EdDSA key Cartouche uses to sign its Sparkle updates. It is one base64 line.
 
 ```text
@@ -165,7 +169,7 @@ Releases are named `wine-crossover-<CX_VERSION>-<BUILD_REVISION>`, for example `
 | --- | --- | --- |
 | `wine-crossover-26.3.0-1` | Released 2026-10-20 | First build. |
 | `wine-crossover-26.3.0-2` | Prerelease | SDL3 for controllers, Mono and Gecko bundled, dlopen and boot checks, licenses and source archives, the display name. |
-| `26.3.0-3` | In progress | GStreamer for media playback. |
+| `26.3.0-3` | In progress, not released | GStreamer for media playback (winegstreamer), LGPL FFmpeg decoders, boot check diagnostics. |
 
 See [docs/CHANGES.md](docs/CHANGES.md).
 
@@ -180,7 +184,7 @@ The license of the build scripts in this repository: Not decided. <!-- TODO veri
 - **[CodeWeavers](https://www.codeweavers.com/)** publishes the CrossOver sources under the LGPL and employs many of Wine's developers. Their Rosetta 2 and macOS fixes are what make this build useful. Thank you. Buy [CrossOver](https://www.codeweavers.com/crossover) if you want support.
 - **[WineHQ](https://www.winehq.org/)** and the Wine contributors write Wine, Wine Mono and Wine Gecko.
 - **[llvm-mingw](https://github.com/mstorsjo/llvm-mingw)** by Martin Storsjo provides the cross compiler for the Windows side.
-- The projects we bundle: FreeType, GnuTLS, MoltenVK, SDL and their dependencies. Their licenses are in each release.
+- The projects we bundle: FreeType, GnuTLS, MoltenVK, SDL, GStreamer, FFmpeg, GLib and their dependencies. Their licenses are in each release.
 - **[Gcenx](https://github.com/Gcenx/macOS_Wine_builds)** builds Wine for macOS and shaped what people expect from such a build. Cartouche lists those builds next to this one.
 
 ## Documentation
