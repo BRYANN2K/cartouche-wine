@@ -37,7 +37,7 @@ build="$work/gst-build"
 
 # FFmpeg: LGPL 2.1 or later (no --enable-gpl, --enable-version3 or
 # --enable-nonfree), shared libraries, decoders and parsers only. HEVC and
-# E-AC-3 are left out on purpose (see docs/26.3.0-3-gstreamer.md).
+# E-AC-3 are left out on purpose (see docs/CHANGES.md, "GStreamer").
 FFMPEG_DECODERS="h264 mpeg1video mpeg2video mpeg4 h263 msmpeg4v1 msmpeg4v2 msmpeg4v3
 wmv1 wmv2 wmv3 wmv3image vc1 vc1image vp6 vp6a vp6f vp8 vp9 theora flv cinepak
 msvideo1 indeo2 indeo3 indeo4 indeo5 mjpeg

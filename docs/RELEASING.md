@@ -44,11 +44,11 @@ The runner is x86_64 because Wine's Unix side is x86_64 code that Rosetta 2 runs
 
 1. Select the pinned Xcode (`xcode-select -s`).
 2. Cache `work/downloads`, keyed by the hash of `pins.env`.
-3. `fetch.sh` for the source tarball, llvm-mingw, Wine Mono, Wine Gecko and their license files.
-4. `brew install` the formulas in `pins.env`.
-5. `build.sh work`. This runs `check-deps.sh`, `check_dlopen.py`, `check-sdl.sh` and `check-licenses.sh` on the install tree.
-6. `package.sh`: writes the archive, `.sha256`, `manifest-entry.json` and `tag` into `out/`, and copies the Homebrew source archives to `out/brew-sources/brew-<formula>-<version>.<ext>`. The entry is also written to the job summary.
-7. `verify.sh`: re-runs the four checks on the packaged archive and runs `wine --version`. Output goes to `out/verify.txt`.
+3. `fetch.sh` for the source tarball, llvm-mingw, Wine Mono, Wine Gecko, their license files, and FFmpeg.
+4. `brew install` the formulas in `pins.env` (`BREW_BUILD_DEPS`, `BREW_LINK_DEPS`, `BREW_GST_DEPS`).
+5. `build.sh work`. This builds GStreamer and FFmpeg first (`build-gstreamer.sh`), then Wine, and runs `check-deps.sh`, `check_dlopen.py`, `check-sdl.sh`, `check-licenses.sh` and `check-gstreamer.sh` on the install tree.
+6. `package.sh`: writes the archive, `.sha256`, `manifest-entry.json` and `tag` into `out/`, and copies the Homebrew source archives to `out/brew-sources/brew-<formula>-<version>.<ext>` and the FFmpeg tarball to `out/`. The entry is also written to the job summary.
+7. `verify.sh`: re-runs the five checks on the packaged archive and runs `wine --version`. Output goes to `out/verify.txt`.
 8. `redist-scan.sh`: fails if the archive holds Apple Game Porting Toolkit files.
 9. Boot check, below.
 10. Upload `out/` as the artifact `wine-crossover` (also when a step failed).
@@ -59,7 +59,7 @@ The runner is x86_64 because Wine's Unix side is x86_64 code that Rosetta 2 runs
 
 It uses a scratch home and prefix, and checks:
 
-1. **Prefix initialization.** `wineboot -i` with Mono and Gecko overridden off (`WINEDLLOVERRIDES=mscoree,mshtml=`), then `wineserver -w`. Limit: `BOOT_INIT_LIMIT`, default 1200 s. The first boot can take many minutes under Rosetta 2.
+1. **Prefix initialization.** `wineboot -i` with Mono and Gecko overridden off (`WINEDLLOVERRIDES=mscoree,mshtml=`, so wineboot never waits on their install) and `WINEDEBUG=err+all,+loaddll`, then `wineserver -w`. Limit: `BOOT_INIT_LIMIT`, default 1200 s. The first boot can take many minutes under Rosetta 2. Wine itself gives up waiting for wineboot after 300 s (`run_wineboot boot event wait timed out`), so no limit here should be below about 330 s.
 2. **Addons.** A second `wineboot -u` with the addons on. It fails when the log shows a download (`Got URL`, `mono runtime not found`) or no `mono runtime is at` line. This proves the bundled Mono is used.
 3. **Registry files.** `system.reg`, `user.reg` and `userdef.reg` exist and are not empty.
 4. **Console programs.** `wine cmd /c ver` and `wine reg query` run, each limited by `BOOT_CMD_LIMIT` (default 300 s).
@@ -70,14 +70,16 @@ It writes `boot.txt` and its logs into the output folder. The `result=` line is 
 | Result | Meaning |
 | --- | --- |
 | `pass mode=headless` or `pass mode=gui` | All checks passed. |
-| `pass mode=no-display-driver` | Prefix, addons and console checks passed with `winemac.drv` disabled after the reference build failed too. GUI behavior still needs a real Mac test. |
 | `init-timeout`, `init-failed`, `addons-timeout`, `addons-failed` | The prefix or the addons did not finish. |
 | `addon-download` | wineboot did not use the bundled Mono. |
 | `no-registry`, `cmd-failed`, `reg-failed` | A later step failed. |
 | `timeout` | No winecfg window in time (GUI only). |
-| `env-cannot-boot` | The first boot failed, and the published 26.3.0-1 fails the same way on this runner. The check warns and exits 0. |
+| `pass mode=no-display-driver` | The first boot failed and 26.3.0-1 fails the same way, but this build boots with the macOS display driver off; the addons, registry and console checks then passed in that prefix. Windows are not checked. The check warns. |
+| `env-cannot-boot` | The first boot failed, 26.3.0-1 fails the same way on this runner, and the build does not boot with the display driver off either. The bundled Mono and Gecko folders must still be there (`addons-missing` otherwise). The check warns and exits 0. |
 
-With `BOOT_DIAG=1`, a failed first boot also boots the published 26.3.0-1 (checked by SHA-256) and this build with `winemac.drv` disabled, each in a fresh prefix. `BOOT_DIAG_LIMIT` defaults to 600 s. If the reference fails the same way but the display-free boot works, the remaining addon, registry and console checks run in that prefix. Failed boots also save loaded-DLL logs, process samples and prefix file listings for diagnosis.
+A failed first boot always prints the first error lines, the last DLL each thread loaded, and `hung.txt`: the Wine processes still running and the prefix's `system32` and `syswow64`. Where macOS allows it, a 2 s stack sample of each Windows process goes to `hung-sample-<pid>.txt` and its call graph to the log.
+
+With `BOOT_DIAG=1`, a failed first boot also boots, each in a fresh prefix with a `BOOT_DIAG_LIMIT` (default 600 s) limit: the published 26.3.0-1 (checked by SHA-256; `BOOT_REF_ROOT` points at another unpacked build instead), then this build with `winemac.drv` disabled. This tells a runner problem from a build problem, and a display problem from the rest.
 
 **Known limit.** On the `macos-15-intel` image of 2026-10-22, the first `wineboot` hangs for both 26.3.0-1 and the new build. The reference failure points to a runner environment problem. A pass with the display driver disabled still cannot prove GUI behavior in CI. Test every release on a Mac before step 4.
 
@@ -89,7 +91,8 @@ Runs only if `publish` is true and the ref is the default branch.
 2. Fetches the source tarball (hash-checked) to attach it.
 3. Stops with an error if the release tag exists.
 4. Extracts `SOURCE.md` from the archive and uses it as the release notes.
-5. `gh release create <tag> --prerelease --latest=false --title "Cartouche Wine <ver>-<rev>"` with: the archive, its `.sha256`, `manifest-entry.json`, `SOURCE.md`, the source tarball and `brew-*` archives.
+5. `gh release create <tag> --prerelease --latest=false --title "Cartouche Wine <ver>-<rev>"` with: the archive, its `.sha256`, `manifest-entry.json`, `SOURCE.md`, the source tarball, the FFmpeg tarball and `brew-*` archives.
+6. Prints a reminder that the build reaches the app only through step 4.
 
 ## 3. Test on a real Mac
 

@@ -84,7 +84,7 @@ The first prefix initialization can take several minutes under Rosetta. Wait for
 - **Wine Mono 10.4.1 and Wine Gecko 2.47.4**, available locally during prefix setup.
 - Dependency licenses, source information and a build record.
 
-The development recipe for **26.3.0-3** also builds GStreamer 1.24.4 and FFmpeg 6.1.6. These are **not included in 26.3.0-2**. See the [GStreamer implementation and pending validation](docs/26.3.0-3-gstreamer.md).
+The development recipe for **26.3.0-3** also builds GStreamer 1.24.4 and FFmpeg 6.1.6. These are **not included in 26.3.0-2**. See the [GStreamer implementation and pending validation](docs/CHANGES.md#gstreamer-from-2630-3).
 
 Apple’s Game Porting Toolkit and D3DMetal are not bundled. The recipe includes a redistribution scan to keep them out of release archives.
 
