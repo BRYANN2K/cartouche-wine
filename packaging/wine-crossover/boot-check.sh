@@ -72,11 +72,12 @@ esac
 
 # Programs started before the prefix install finishes fail to open windows, so
 # run wineboot first under its own limit; the remaining system services don't
-# keep wineserver alive, so -w returns once the install is done. mscoree stays
-# on, so the bundled Wine Mono is installed (its traces are checked below).
+# keep wineserver alive, so -w returns once the install is done. The addons
+# (Wine Mono, Wine Gecko) are left out here and installed by a second, separate
+# wineboot, so a failure says which part broke.
 start=$(date +%s)
 init() {
-    WINEDEBUG=err+all,trace+mscoree,trace+appwizcpl "$root/bin/wine" wineboot -i \
+    WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=err+all "$root/bin/wine" wineboot -i \
         && "$root/bin/wineserver" -w
 }
 rc=0
@@ -98,10 +99,32 @@ if [ "$rc" -ne 0 ]; then
 fi
 echo "boot-check: prefix initialized in $init_seconds s"
 
+# Second pass: wineboot -u with mscoree and mshtml on installs the bundled addons
+addons() {
+    WINEDEBUG=err+all,trace+mscoree,trace+appwizcpl,+loaddll "$root/bin/wine" wineboot -u \
+        && "$root/bin/wineserver" -w
+}
+start=$(date +%s)
+rc=0
+limited "$init_limit" "$out/addons.log" addons || rc=$?
+addons_seconds=$(( $(date +%s) - start ))
+if [ "$rc" -ne 0 ]; then
+    {
+        echo "== addons: first error lines"; grep -n "err:\|could not load\|c0000" "$out/addons.log" | head -n 60
+        echo "== addons: programs and core dlls loaded"
+        grep -n "Loaded.*\(kernel32\|ntdll\|mscoree\|appwiz\|msiexec\|rundll\|wineboot\)\|\.exe" "$out/addons.log" | head -n 80
+        echo "== addons: mscoree/appwiz traces"; grep "mscoree\|appwizcpl" "$out/addons.log" | head -n 40
+        echo "== share/wine"; ls "$root/share/wine/mono" "$root/share/wine/gecko" 2>&1
+    } >&2 || true
+    [ "$rc" -ne 124 ] || fail "addons-timeout" "$out/addons.log" "installing the addons did not finish within $init_limit s"
+    fail "addons-failed rc=$rc" "$out/addons.log" "installing the addons exited $rc"
+fi
+echo "boot-check: addons installed in $addons_seconds s"
+
 # appwiz.cpl traces "Got URL" only on its way to the download dialog
-if grep -q "mono runtime not found\|Got URL" "$out/wineboot.log" \
-    || ! grep -q "mono runtime is at" "$out/wineboot.log"; then
-    grep "mscoree\|appwizcpl" "$out/wineboot.log" | tail -n 30 >&2 || true
+if grep -q "mono runtime not found\|Got URL" "$out/addons.log" \
+    || ! grep -q "mono runtime is at" "$out/addons.log"; then
+    grep "mscoree\|appwizcpl" "$out/addons.log" | tail -n 30 >&2 || true
     fail addon-download "" "wineboot did not use the bundled Wine Mono"
 fi
 
