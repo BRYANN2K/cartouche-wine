@@ -512,7 +512,7 @@ class Licenses(unittest.TestCase):
     """check-licenses.sh and collect-licenses.sh on fake trees and a fake brew."""
 
     def setUp(self):
-        self.work = pathlib.Path(tempfile.mkdtemp(prefix="licenses-test-")).resolve()
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix="licenses-test-"))
         self.addCleanup(shutil.rmtree, self.work)
         self.root = self.work / "pkg"
         for name in ("libSDL2-2.0.0.dylib", "libSDL3.dylib"):
@@ -622,10 +622,12 @@ esac
         write(gst / "lib/gstreamer-1.0/libgstlibav.dylib", "plugin\n")
         ffmpeg = self.work / "ffmpeg"
         write(ffmpeg / "lib/libavcodec.60.31.102.dylib", "dylib\n")
+        # bundle-deps.sh writes real paths (/private/var/... for a macOS temp folder)
+        rgst, rffmpeg = gst.resolve(), ffmpeg.resolve()
         with origins.open("a") as f:
-            f.write(f"libgstreamer-1.0.0.dylib {gst}/lib/libgstreamer-1.0.0.dylib\n"
-                    f"libgstlibav.dylib {gst}/lib/gstreamer-1.0/libgstlibav.dylib\n"
-                    f"libavcodec.60.dylib {ffmpeg}/lib/libavcodec.60.31.102.dylib\n")
+            f.write(f"libgstreamer-1.0.0.dylib {rgst}/lib/libgstreamer-1.0.0.dylib\n"
+                    f"libgstlibav.dylib {rgst}/lib/gstreamer-1.0/libgstlibav.dylib\n"
+                    f"libavcodec.60.dylib {rffmpeg}/lib/libavcodec.60.31.102.dylib\n")
         dest = self.work / "licenses"
         args = ("sh", SCRIPTS / "collect-licenses.sh", "--local", gst, "gstreamer", "--local", ffmpeg, "ffmpeg",
                 origins, dest)
