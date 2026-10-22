@@ -76,6 +76,7 @@ class WineCrossOverScripts(unittest.TestCase):
         for name in ("libSDL2-2.0.0.dylib", "libSDL3.dylib"):
             run("cc", "-arch", "x86_64", "-dynamiclib", stub, "-install_name", "@rpath/" + name,
                 "-o", install / "lib" / name, check=True)
+        fake_gstreamer(install)
         fake_licenses(install)
         return install
 
@@ -109,31 +110,39 @@ class WineCrossOverScripts(unittest.TestCase):
 
     def test_package_has_the_notices_source_offer_and_a_matching_entry(self):
         out = self.package()
-        asset = out / "wine-crossover-26.3.0-2-x86_64.tar.xz"
+        asset = out / "wine-crossover-26.3.0-3-x86_64.tar.xz"
         self.assertTrue(asset.is_file())
-        self.assertEqual((out / "tag").read_text().strip(), "wine-crossover-26.3.0-2")
+        self.assertEqual((out / "tag").read_text().strip(), "wine-crossover-26.3.0-3")
         self.assertEqual((out / f"{asset.name}.sha256").read_text().split()[0], sha256(asset))
 
         listing = run("tar", "-tJf", asset, check=True).stdout.split()
-        self.assertTrue(all(p.startswith("wine-crossover-26.3.0-2") for p in listing))
+        self.assertTrue(all(p.startswith("wine-crossover-26.3.0-3") for p in listing))
         for f in ("LICENSE", "COPYING.LIB", "AUTHORS", "SOURCE.md", "BUILDINFO.txt", "bin/wine",
-                  "lib/wine/x86_64-unix/wine", "lib/wine/i386-windows/ntdll.dll"):
-            self.assertIn(f"wine-crossover-26.3.0-2/{f}", listing)
-        offer = run("tar", "-xJOf", asset, "wine-crossover-26.3.0-2/SOURCE.md", check=True).stdout
+                  "lib/wine/x86_64-unix/wine", "lib/wine/i386-windows/ntdll.dll",
+                  "lib/gstreamer-1.0/libgstlibav.dylib", "libexec/gstreamer-1.0/gst-inspect-1.0"):
+            self.assertIn(f"wine-crossover-26.3.0-3/{f}", listing)
+        offer = run("tar", "-xJOf", asset, "wine-crossover-26.3.0-3/SOURCE.md", check=True).stdout
         self.assertIn("https://media.codeweavers.com/pub/crossover/source/crossover-sources-26.3.0.tar.gz", offer)
-        self.assertIn("https://github.com/owner/repo/releases/tag/wine-crossover-26.3.0-2", offer)
+        self.assertIn("https://github.com/owner/repo/releases/tag/wine-crossover-26.3.0-3", offer)
         self.assertIn("tree/abc123/packaging/wine-crossover", offer)
         self.assertIn("GNU Lesser General Public", offer)
-        self.assertIn("Cartouche Wine 26.3.0-2: Wine built from CodeWeavers'", offer)
+        self.assertIn("Cartouche Wine 26.3.0-3: Wine built from CodeWeavers'", offer)
+        self.assertIn("GStreamer 1.24.4", offer)
+        self.assertIn("https://ffmpeg.org/releases/ffmpeg-6.1.6.tar.xz", offer)
+        self.assertIn("ffmpeg-6.1.6.tar.xz", offer)
+        self.assertIn("GST_REGISTRY_1_0", offer)
+        info = run("tar", "-xJOf", asset, "wine-crossover-26.3.0-3/BUILDINFO.txt", check=True).stdout
+        self.assertIn("gstreamer=1.24.4", info)
+        self.assertIn("ffmpeg=6.1.6", info)
 
         entry = json.loads((out / "manifest-entry.json").read_text())
         self.assertEqual(entry, {
-            "id": "wine-crossover-26.3.0-2", "kind": "wineBuild", "origin": "cartouche",
+            "id": "wine-crossover-26.3.0-3", "kind": "wineBuild", "origin": "cartouche",
             "name": "Cartouche Wine", "version": "26.3.0", "displayVersion": "26.3",
-            "url": "https://github.com/owner/repo/releases/download/wine-crossover-26.3.0-2/"
-                   "wine-crossover-26.3.0-2-x86_64.tar.xz",
+            "url": "https://github.com/owner/repo/releases/download/wine-crossover-26.3.0-3/"
+                   "wine-crossover-26.3.0-3-x86_64.tar.xz",
             "size": asset.stat().st_size, "sha256": sha256(asset),
-            "root": "wine-crossover-26.3.0-2", "loader": "bin/wine", "flavors": ["rosetta"],
+            "root": "wine-crossover-26.3.0-3", "loader": "bin/wine", "flavors": ["rosetta"],
         })
 
     def test_package_refuses_sources_that_are_not_the_pinned_tarball(self):
@@ -147,7 +156,7 @@ class WineCrossOverScripts(unittest.TestCase):
 
     def test_verify_runs_wine_from_the_archive(self):
         out = self.package()
-        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.0-2-x86_64.tar.xz")
+        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.0-3-x86_64.tar.xz")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.strip().splitlines()[-1], "wine-11.0 (fake)")
 
@@ -159,7 +168,7 @@ class WineCrossOverScripts(unittest.TestCase):
         env = dict(os.environ, PINS_FILE=str(pins))
         r = run("sh", SCRIPTS / "package.sh", install, tarball, out, env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
-        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.0-2-x86_64.tar.xz", env=env)
+        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.0-3-x86_64.tar.xz", env=env)
         self.assertEqual(r.returncode, 1)
         self.assertIn("share/wine/gecko/wine-gecko-2.47.4-x86_64/xul.dll is missing", r.stderr)
 
@@ -172,7 +181,7 @@ class WineCrossOverScripts(unittest.TestCase):
 
     def test_verify_refuses_an_archive_that_does_not_match_its_hash(self):
         out = self.package()
-        asset = out / "wine-crossover-26.3.0-2-x86_64.tar.xz"
+        asset = out / "wine-crossover-26.3.0-3-x86_64.tar.xz"
         (out / f"{asset.name}.sha256").write_text(f"{'0' * 64}  {asset.name}\n")
         r = run("sh", SCRIPTS / "verify.sh", asset)
         self.assertEqual(r.returncode, 1)
@@ -209,6 +218,28 @@ class WineCrossOverScripts(unittest.TestCase):
         r = run("sh", SCRIPTS / "check-deps.sh", bundled)
         self.assertEqual(r.returncode, 0, r.stderr)
 
+    def test_bundle_deps_places_plugins_beside_the_libraries_they_load(self):
+        lib = self.dylibs()
+        (self.work / "plugin.c").write_text("int bar(void); int plugin(void) { return bar(); }\n")
+        plugin = self.work / "build" / "libgstfake.dylib"
+        plugin.parent.mkdir()
+        # Like a meson-installed plugin: an absolute LC_RPATH into the build machine
+        run("cc", "-dynamiclib", "-o", plugin, self.work / "plugin.c", lib / "libbar.2.dylib",
+            f"-Wl,-rpath,{lib}", "-Wl,-headerpad_max_install_names", check=True)
+        bundled = self.work / "deps"
+        r = run("sh", SCRIPTS / "bundle-deps.sh", "--search", lib,
+                "--place", bundled / "gstreamer-1.0", "@loader_path/..", plugin, bundled)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(sorted(p.name for p in bundled.iterdir()),
+                         ["gstreamer-1.0", "libbar.2.dylib", "libfoo.1.dylib"])
+        placed = bundled / "gstreamer-1.0/libgstfake.dylib"
+        commands = run("otool", "-l", placed, check=True).stdout
+        self.assertIn("path @loader_path/.. (", commands)
+        self.assertNotIn(str(lib), commands)
+        self.assertIn("@rpath/libbar.2.dylib", run("otool", "-L", placed, check=True).stdout)
+        r = run("sh", SCRIPTS / "check-deps.sh", bundled)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_dry_run_prints_the_pinned_configure_and_touches_nothing(self):
         work = self.work / "dry"
         r = run("sh", SCRIPTS / "build.sh", "--dry-run", work)
@@ -228,12 +259,54 @@ class WineCrossOverScripts(unittest.TestCase):
         self.assertIn("check-deps.sh", r.stdout)
 
 
+def listed_plugins():
+    """The plugin names in gstreamer-plugins.txt."""
+    return [line.split()[2] for line in (SCRIPTS / "gstreamer-plugins.txt").read_text().splitlines()
+            if line.strip() and not line.startswith("#")]
+
+
+ELEMENTS = ("decodebin videoconvert audioconvert audioresample capsfilter deinterlace videoflip appsrc appsink "
+            "queue avdec_h264 avdec_wmv3 avdec_vc1 avdec_wmav2 avdec_aac avdec_mp3 avdec_mpeg2video qtdemux "
+            "asfdemux matroskademux avidemux h264parse vc1parse mpegpsdemux").split()
+
+
+def fake_gstreamer(install, elements=ELEMENTS, blacklisted=0, licenses=None, plugin_dir=None):
+    """winegstreamer.so, the listed plugins and a gst-inspect-1.0 that answers
+    like the real one: -b, --exists <element>, and <plugin> with its file and
+    license. It fails when any GST_ variable but GST_REGISTRY_1_0 is set."""
+    write(install / "lib/wine/x86_64-unix/winegstreamer.so", "unix lib\n")
+    for name in listed_plugins():
+        write(install / f"lib/gstreamer-1.0/libgst{name}.dylib", "plugin\n")
+    licenses = dict({"mpegpsdemux": "unknown"}, **(licenses or {}))
+    cases = "".join(f"    {name}) echo '  License                  {lic}' ;;\n" for name, lic in licenses.items())
+    where = f"'{plugin_dir}'" if plugin_dir else '"$(cd "$(dirname "$0")/../../lib/gstreamer-1.0" && pwd -P)"'
+    write(install / "libexec/gstreamer-1.0/gst-inspect-1.0", f"""#!/bin/sh
+env | grep '^GST_' | grep -v '^GST_REGISTRY_1_0=' && exit 9
+[ -n "$GST_REGISTRY_1_0" ] || exit 9
+case "$1" in
+-b) echo "Blacklisted files:"; echo; echo "Total count: {blacklisted} blacklisted files"; exit 0 ;;
+--exists) case " {' '.join(elements)} " in *" $2 "*) exit 0 ;; *) exit 1 ;; esac ;;
+esac
+echo "Plugin Details:"
+echo "  Name                     $1"
+echo "  Filename                 {where}/libgst$1.dylib"
+case "$1" in
+{cases}    *) echo '  License                  LGPL' ;;
+esac
+""", 0o755)
+
+
 def fake_licenses(install):
     """What build.sh leaves in share/licenses for the fake install's SDL dylibs."""
     licenses = install / "share/licenses"
-    write(licenses / "dylibs.txt", "libSDL2-2.0.0.dylib sdl2-compat\nlibSDL3.dylib sdl3\n")
+    mapping = "libSDL2-2.0.0.dylib sdl2-compat\nlibSDL3.dylib sdl3\n"
+    for f in sorted((install / "lib/gstreamer-1.0").glob("*")) + sorted((install / "libexec/gstreamer-1.0").glob("*")):
+        mapping += f"{f.name} gstreamer\n"
+    write(licenses / "dylibs.txt", mapping)
     for name in ("sdl2-compat", "sdl3"):
         write(licenses / name / "LICENSE.txt", "zlib\n")
+    write(licenses / "gstreamer/COPYING.gst-libav", "LGPL\n")
+    write(licenses / "ffmpeg/COPYING.LGPLv2.1", "LGPL\n")
     write(licenses / "wine-mono/COPYING", "MIT\n")
     write(licenses / "wine-gecko/LICENSE", "MPL\n")
 
@@ -416,6 +489,17 @@ class Licenses(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("libSDL3.dylib comes from sdl3, which has no files in share/licenses/sdl3", r.stderr)
 
+    def test_gstreamer_plugins_and_tools_need_an_entry_too(self):
+        write(self.root / "lib/gstreamer-1.0/libgstlibav.dylib", "plugin\n")
+        write(self.root / "libexec/gstreamer-1.0/gst-inspect-1.0", "tool\n", 0o755)
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("libgstlibav.dylib has no entry", r.stderr)
+        self.assertIn("gst-inspect-1.0 has no entry", r.stderr)
+        fake_licenses(self.root)
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stderr)
+
     def test_bundled_gecko_needs_its_license(self):
         shutil.rmtree(self.root / "share/licenses/wine-gecko")
         r = self.check()
@@ -480,12 +564,181 @@ esac
         self.assertEqual(r.returncode, 1)
         self.assertIn("no license file found for nettle", r.stderr)
 
+    def test_collect_maps_files_built_from_a_local_folder(self):
+        origins, env = self.cellar()
+        gst = self.work / "gst"
+        write(gst / "lib/libgstreamer-1.0.0.dylib", "dylib\n")
+        write(gst / "lib/gstreamer-1.0/libgstlibav.dylib", "plugin\n")
+        ffmpeg = self.work / "ffmpeg"
+        write(ffmpeg / "lib/libavcodec.60.31.102.dylib", "dylib\n")
+        with origins.open("a") as f:
+            f.write(f"libgstreamer-1.0.0.dylib {gst}/lib/libgstreamer-1.0.0.dylib\n"
+                    f"libgstlibav.dylib {gst}/lib/gstreamer-1.0/libgstlibav.dylib\n"
+                    f"libavcodec.60.dylib {ffmpeg}/lib/libavcodec.60.31.102.dylib\n")
+        dest = self.work / "licenses"
+        args = ("sh", SCRIPTS / "collect-licenses.sh", "--local", gst, "gstreamer", "--local", ffmpeg, "ffmpeg",
+                origins, dest)
+        write(dest / "gstreamer/COPYING.gstreamer", "LGPL\n")
+        r = run(*args, env=env)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("libavcodec.60.dylib comes from ffmpeg, which has no license files", r.stderr)
+        write(dest / "ffmpeg/COPYING.LGPLv2.1", "LGPL\n")
+        r = run(*args, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        mapping = (dest / "dylibs.txt").read_text().splitlines()
+        self.assertIn("libgstreamer-1.0.0.dylib gstreamer", mapping)
+        self.assertIn("libgstlibav.dylib gstreamer", mapping)
+        self.assertIn("libavcodec.60.dylib ffmpeg", mapping)
+        self.assertIn("libgnutls.30.dylib gnutls", mapping)
+        self.assertEqual((dest / "formulas.txt").read_text(), "gnutls 3.8.9\nnettle 3.10.1\n",
+                         "local packages are not Homebrew formulas")
+
     def test_collect_refuses_a_dylib_from_outside_homebrew(self):
         origins = self.work / "origins.txt"
         origins.write_text("libfoo.1.dylib /opt/local/lib/libfoo.1.dylib\n")
         r = run("sh", SCRIPTS / "collect-licenses.sh", origins, self.work / "licenses")
         self.assertEqual(r.returncode, 1)
         self.assertIn("not a Homebrew keg", r.stderr)
+
+
+class GStreamer(unittest.TestCase):
+    """build-gstreamer.sh's dry run, the plugin list and check-gstreamer.sh."""
+
+    def setUp(self):
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix="gstreamer-test-"))
+        self.addCleanup(shutil.rmtree, self.work)
+        self.root = self.work / "pkg"
+
+    def check(self):
+        return run("sh", SCRIPTS / "check-gstreamer.sh", self.root)
+
+    def test_the_plugin_list_has_what_wine_creates_and_nothing_gpl(self):
+        lines = [line.split() for line in (SCRIPTS / "gstreamer-plugins.txt").read_text().splitlines()
+                 if line.strip() and not line.startswith("#")]
+        modules = {"gstreamer", "gst-plugins-base", "gst-plugins-good", "gst-plugins-bad", "gst-plugins-ugly",
+                   "gst-libav"}
+        for fields in lines:
+            self.assertEqual(len(fields), 3, fields)
+            self.assertIn(fields[0], modules)
+        plugins = {f[2] for f in lines}
+        # decodebin, videoconvert, audioconvert, audioresample, capsfilter,
+        # deinterlace, videoflip, appsrc/appsink, then the avdec_* decoders
+        for needed in ("playback", "videoconvertscale", "audioconvert", "audioresample", "coreelements",
+                       "deinterlace", "videofilter", "app", "typefindfunctions", "libav", "isomp4", "asf",
+                       "videoparsersbad"):
+            self.assertIn(needed, plugins)
+        options = {f[1] for f in lines}
+        for gpl in ("x264", "x265", "openh264", "faad", "a52dec", "dts", "mpeg2dec", "gpl", "resindvd"):
+            self.assertNotIn(gpl, options)
+
+    def test_dry_run_builds_lgpl_ffmpeg_and_only_the_listed_plugins(self):
+        work = self.work / "dry"
+        r = run("sh", SCRIPTS / "build-gstreamer.sh", "--dry-run", self.work / "gst-src",
+                self.work / "ffmpeg.tar.xz", work)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(work.exists())
+        configure = next(line for line in r.stdout.splitlines() if "./configure" in line)
+        for flag in ("--disable-everything", "--enable-shared", "--disable-programs", "--disable-autodetect",
+                     "--enable-decoder=h264", "--enable-decoder=wmv3", "--enable-decoder=vc1",
+                     "--enable-decoder=wmav2", "--enable-decoder=aac", "--enable-parser=h264"):
+            self.assertIn(flag, configure.split())
+        for flag in ("--enable-gpl", "--enable-nonfree", "--enable-version3", "--enable-decoder=hevc",
+                     "--enable-libx264"):
+            self.assertNotIn(flag, configure.split())
+        setups = [line for line in r.stdout.splitlines() if line.startswith("+ meson setup")]
+        self.assertEqual([s.split()[3].rsplit("/", 1)[1] for s in setups],
+                         ["gstreamer", "gst-plugins-base", "gst-plugins-good", "gst-plugins-bad",
+                          "gst-plugins-ugly", "gst-libav"])
+        for s in setups:
+            for flag in ("--auto-features=disabled", "--wrap-mode=nofallback", "-Dtests=disabled"):
+                self.assertIn(flag, s.split())
+        by_module = {s.split()[3].rsplit("/", 1)[1]: s.split() for s in setups}
+        self.assertIn("-Dtools=enabled", by_module["gstreamer"])
+        self.assertIn("-Dvideoconvertscale=enabled", by_module["gst-plugins-base"])
+        self.assertIn("-Dasfdemux=enabled", by_module["gst-plugins-ugly"])
+        self.assertIn("-Dgpl=disabled", by_module["gst-plugins-ugly"])
+        self.assertIn("-Dgpl=disabled", by_module["gst-plugins-bad"])
+        self.assertIn("-Dvideoparsers=enabled", by_module["gst-plugins-bad"])
+        self.assertNotIn("-Dx264=enabled", by_module["gst-plugins-ugly"])
+
+    def test_a_working_bundle_passes(self):
+        fake_gstreamer(self.root)
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"{len(listed_plugins())} plugins load from", r.stdout)
+
+    def test_a_missing_plugin_fails(self):
+        fake_gstreamer(self.root)
+        (self.root / "lib/gstreamer-1.0/libgstasf.dylib").unlink()
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("lib/gstreamer-1.0/libgstasf.dylib is missing", r.stderr)
+
+    def test_winegstreamer_must_be_built(self):
+        fake_gstreamer(self.root)
+        (self.root / "lib/wine/x86_64-unix/winegstreamer.so").unlink()
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("winegstreamer.so is missing", r.stderr)
+
+    def test_a_plugin_that_does_not_load_fails(self):
+        fake_gstreamer(self.root, blacklisted=1)
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("plugins that do not load", r.stderr)
+
+    def test_plugins_found_outside_the_package_fail(self):
+        fake_gstreamer(self.root, plugin_dir="/usr/local/lib/gstreamer-1.0")
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not from the package", r.stderr)
+
+    def test_a_gpl_plugin_fails(self):
+        fake_gstreamer(self.root, licenses={"libav": "GPL"})
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("plugin libav is licensed 'GPL', not LGPL", r.stderr)
+
+    def test_a_missing_decoder_fails(self):
+        fake_gstreamer(self.root, elements=[e for e in ELEMENTS if e != "avdec_wmv3"])
+        r = self.check()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("elements not found: avdec_wmv3", r.stderr)
+
+    def test_the_check_ignores_the_callers_gstreamer_variables(self):
+        fake_gstreamer(self.root)
+        env = dict(os.environ, GST_PLUGIN_PATH="/usr/local/lib/gstreamer-1.0", GST_PLUGIN_SYSTEM_PATH_1_0="/x")
+        r = run("sh", SCRIPTS / "check-gstreamer.sh", self.root, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_build_dry_run_enables_winegstreamer_on_the_bundled_gstreamer(self):
+        work = self.work / "dry"
+        r = run("sh", SCRIPTS / "build.sh", "--dry-run", work)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse(work.exists())
+        out = r.stdout
+        configure = next(line for line in out.splitlines() if "sources/wine/configure" in line)
+        self.assertIn("--with-gstreamer", configure.split())
+        self.assertNotIn("--without-gstreamer", configure)
+        self.assertIn("--without-ffmpeg", configure.split())
+        self.assertIn(f"GSTREAMER_LIBS=-L{work}/gst-link", configure)
+        # build-gstreamer.sh's own dry run, from the pinned FFmpeg and the sources' GStreamer tree
+        self.assertIn(f"{work}/downloads/ffmpeg-6.1.6.tar.xz", out)
+        self.assertIn(f"meson setup {work}/gst-build/gst-libav {work}/src/sources/gstreamer/subprojects/gst-libav", out)
+        self.assertLess(out.index("meson setup"), out.index("sources/wine/configure"))
+        bundle = next(line for line in out.splitlines() if "bundle-deps.sh" in line)
+        for name in listed_plugins():
+            self.assertIn(f"--place {work}/deps/lib/gstreamer-1.0 @loader_path/.. {work}/gst/lib/gstreamer-1.0/"
+                          f"libgst{name}.dylib", bundle)
+        self.assertIn(f"--place {work}/deps/libexec/gstreamer-1.0 @executable_path/../../lib "
+                      f"{work}/gst/bin/gst-inspect-1.0", bundle)
+        self.assertIn(f"--search {work}/gst/lib --search {work}/ffmpeg/lib", bundle)
+        collect = next(line for line in out.splitlines() if "collect-licenses.sh" in line)
+        self.assertIn(f"--local {work}/gst gstreamer --local {work}/ffmpeg ffmpeg", collect)
+        self.assertIn("COPYING.gst-libav", out)
+        self.assertIn("COPYING.LGPLv2.1", out)
+        self.assertIn("check-gstreamer.sh", out)
+        self.assertIn(f"cp -R {work}/deps/libexec {work}/install/", out)
 
 
 class ManifestEntry(unittest.TestCase):
@@ -504,12 +757,12 @@ class ManifestEntry(unittest.TestCase):
     def test_the_display_name_is_cartouche_wine_and_the_id_stays(self):
         with tempfile.NamedTemporaryFile(suffix=".tar.xz") as f:
             name = pathlib.Path(f.name).name
-            r = run(sys.executable, SCRIPTS / "manifest_entry.py", f.name, "--id", "wine-crossover-26.3.0-2",
-                    "--url", f"https://h/{name}", "--root", "wine-crossover-26.3.0-2",
+            r = run(sys.executable, SCRIPTS / "manifest_entry.py", f.name, "--id", "wine-crossover-26.3.0-3",
+                    "--url", f"https://h/{name}", "--root", "wine-crossover-26.3.0-3",
                     "--version", "26.3.0", "--display-version", "26.3", check=True)
             entry = json.loads(r.stdout)
             self.assertEqual(entry["name"], "Cartouche Wine")
-            self.assertEqual(entry["id"], "wine-crossover-26.3.0-2")
+            self.assertEqual(entry["id"], "wine-crossover-26.3.0-3")
 
 
 class Pins(unittest.TestCase):
@@ -519,12 +772,17 @@ class Pins(unittest.TestCase):
                     if line and not line.startswith("#"))
         for key in ("CX_SOURCE_SHA256", "LLVM_MINGW_SHA256", "WINE_MONO_SHA256", "WINE_GECKO_X86_SHA256",
                     "WINE_GECKO_X86_64_SHA256", "WINE_MONO_LICENSE_SHA256", "WINE_GECKO_LICENSE_SHA256",
-                    "WINE_GECKO_LICENSE_HTML_SHA256"):
+                    "WINE_GECKO_LICENSE_HTML_SHA256", "FFMPEG_SHA256"):
             self.assertRegex(pins[key], r"^[0-9a-f]{64}$")
         for key in ("CX_SOURCE_URL", "LLVM_MINGW_URL", "WINE_MONO_URL", "WINE_GECKO_X86_URL",
                     "WINE_GECKO_X86_64_URL", "WINE_MONO_LICENSE_URL", "WINE_GECKO_LICENSE_URL",
-                    "WINE_GECKO_LICENSE_HTML_URL"):
+                    "WINE_GECKO_LICENSE_HTML_URL", "FFMPEG_URL"):
             self.assertTrue(pins[key].startswith("https://"))
+        self.assertEqual(pins["FFMPEG_URL"], f"https://ffmpeg.org/releases/ffmpeg-{pins['FFMPEG_VERSION']}.tar.xz")
+        self.assertRegex(pins["GST_VERSION"], r"^1\.\d*[02468]\.\d+$", "a stable GStreamer")
+        self.assertIn("glib", pins["BREW_GST_DEPS"])
+        for tool in ("meson", "ninja", "nasm"):
+            self.assertIn(tool, pins["BREW_BUILD_DEPS"].strip('"').split())
         mono, gecko = pins["WINE_MONO_VERSION"], pins["WINE_GECKO_VERSION"]
         self.assertTrue(pins["WINE_MONO_URL"].endswith(f"/{mono}/wine-mono-{mono}-x86.tar.xz"))
         self.assertTrue(pins["WINE_GECKO_X86_URL"].endswith(f"/{gecko}/wine-gecko-{gecko}-x86.tar.xz"))

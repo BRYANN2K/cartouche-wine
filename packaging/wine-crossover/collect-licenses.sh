@@ -4,15 +4,26 @@
 # <licenses folder>/dylibs.txt. The files come from the keg and from the
 # formula's source (brew fetch -s), because kegs keep only some of them.
 #
-#   ./collect-licenses.sh <origins file> <licenses folder> [<sources folder>]
+#   ./collect-licenses.sh [--local <folder> <package>]... <origins file> <licenses folder> [<sources folder>]
 #
 # The origins file is the one bundle-deps.sh --origins writes. With a sources
 # folder, each formula's source archive is also copied there as
-# <formula>-<version>.<ext>, for the LGPL source offer. Exits 1 when a dylib is
-# not from a keg or a formula has no license file.
+# <formula>-<version>.<ext>, for the LGPL source offer. --local maps the files
+# that came from <folder> (what build-gstreamer.sh built) to <package>, whose
+# license files and source the caller provides in <licenses folder>/<package>.
+# Exits 1 when a dylib is neither from a keg nor from a --local folder, or a
+# formula or local package has no license file.
 set -eu
 
-[ $# -eq 2 ] || [ $# -eq 3 ] || { echo "usage: collect-licenses.sh <origins file> <licenses folder> [<sources folder>]" >&2; exit 2; }
+locals=
+while [ "${1:-}" = --local ]; do
+    [ $# -ge 3 ] || { echo "collect-licenses: --local needs <folder> <package>" >&2; exit 2; }
+    [ -d "$2" ] || { echo "collect-licenses: $2 is not a folder" >&2; exit 2; }
+    locals="$locals$(cd "$2" && pwd -P) $3
+"
+    shift 3
+done
+[ $# -eq 2 ] || [ $# -eq 3 ] || { echo "usage: collect-licenses.sh [--local <folder> <package>]... <origins file> <licenses folder> [<sources folder>]" >&2; exit 2; }
 origins=$1 dest=$2 sources=${3:-}
 mkdir -p "$dest"
 [ -z "$sources" ] || mkdir -p "$sources"
@@ -35,10 +46,25 @@ source_licenses() {
     done
 }
 
+# The package of a file built from a --local folder, or nothing
+local_package() {
+    printf '%s' "$locals" | awk -v p="$1" 'NF {
+        pkg = $NF; dir = substr($0, 1, length($0) - length(pkg) - 1)
+        if (index(p, dir "/") == 1) { print pkg; exit }
+    }'
+}
+
 while read -r leaf path; do
+    pkg=$(local_package "$path")
+    if [ -n "$pkg" ]; then
+        echo "$leaf $pkg" >> "$dest/dylibs.txt"
+        [ -n "$(ls -A "$dest/$pkg" 2>/dev/null)" ] \
+            || { echo "collect-licenses: $leaf comes from $pkg, which has no license files in $dest/$pkg" >&2; exit 1; }
+        continue
+    fi
     case "$path" in
         */Cellar/*/*/*) ;;
-        *) echo "collect-licenses: $leaf comes from $path, not a Homebrew keg" >&2; exit 1 ;;
+        *) echo "collect-licenses: $leaf comes from $path, not a Homebrew keg or a --local folder" >&2; exit 1 ;;
     esac
     rest=${path#*/Cellar/}
     formula=${rest%%/*}

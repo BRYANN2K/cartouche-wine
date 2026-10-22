@@ -1,5 +1,6 @@
 #!/bin/sh
-# Fails unless every bundled dylib (lib/*.dylib) is mapped to a package in
+# Fails unless every bundled dylib (lib/*.dylib, and the GStreamer plugins and
+# tools in lib/gstreamer-1.0 and libexec/gstreamer-1.0) is mapped to a package in
 # share/licenses/dylibs.txt whose folder holds its license files, and Wine Mono
 # and Wine Gecko, when bundled, have theirs.
 #
@@ -14,7 +15,7 @@ trap 'rm -f "$bad"' EXIT
 
 has_files() { [ -d "$1" ] && [ -n "$(find "$1" -type f | head -n 1)" ]; }
 
-for lib in "$root"/lib/*.dylib; do
+for lib in "$root"/lib/*.dylib "$root"/lib/gstreamer-1.0/* "$root"/libexec/gstreamer-1.0/*; do
     [ -e "$lib" ] || continue
     leaf=$(basename "$lib")
     pkg=$(awk -v l="$leaf" '$1 == l { print $2; exit }' "$licenses/dylibs.txt" 2>/dev/null || true)

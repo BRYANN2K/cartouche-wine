@@ -1,0 +1,35 @@
+# The GStreamer plugins Cartouche Wine ships, one per line as
+#   <module> <meson option that builds it, or - when always built> <plugin>
+# build-gstreamer.sh enables exactly these options, and build.sh copies each
+# libgst<plugin> into lib/gstreamer-1.0. Every one is LGPL; nothing from the
+# GPL or patent-restricted options (x264, x265, openh264, faad, a52dec, dts,
+# mpeg2dec) is built. Wine's winegstreamer needs the first group by name
+# (create_element in dlls/winegstreamer); the rest decode what games ship.
+
+# Created by name: capsfilter, queue, appsrc/appsink, decodebin, videoconvert,
+# audioconvert, audioresample, deinterlace, videoflip
+gstreamer - coreelements
+gst-plugins-base app app
+gst-plugins-base playback playback
+gst-plugins-base typefind typefindfunctions
+gst-plugins-base videoconvertscale videoconvertscale
+gst-plugins-base audioconvert audioconvert
+gst-plugins-base audioresample audioresample
+gst-plugins-base pbtypes pbtypes
+gst-plugins-good deinterlace deinterlace
+gst-plugins-good videofilter videofilter
+
+# Demuxers and parsers decodebin picks by caps
+gst-plugins-good isomp4 isomp4
+gst-plugins-good matroska matroska
+gst-plugins-good avi avi
+gst-plugins-good wavparse wavparse
+gst-plugins-good audioparsers audioparsers
+gst-plugins-good id3demux id3demux
+gst-plugins-bad videoparsers videoparsersbad
+gst-plugins-bad mpegdemux mpegpsdemux
+gst-plugins-bad mpegtsdemux mpegtsdemux
+gst-plugins-ugly asfdemux asf
+
+# Decoders (avdec_*), over the LGPL FFmpeg build-gstreamer.sh makes
+gst-libav - libav

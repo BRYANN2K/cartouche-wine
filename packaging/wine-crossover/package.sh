@@ -44,9 +44,10 @@ cat > "$root/SOURCE.md" <<EOF
 This is Cartouche Wine $CX_VERSION-$BUILD_REVISION: Wine built from CodeWeavers'
 CrossOver $CX_VERSION sources (LGPL) by Cartouche. It is free software under
 the GNU Lesser General Public License, version 2.1 or later (COPYING.LIB,
-LICENSE, AUTHORS). The libraries bundled with it (lib/*.dylib), Wine Mono and
+LICENSE, AUTHORS). The libraries bundled with it (lib/*.dylib), the GStreamer
+plugins (lib/gstreamer-1.0) and tools (libexec/gstreamer-1.0), Wine Mono and
 Wine Gecko keep their own licenses, in share/licenses/<package>/;
-share/licenses/dylibs.txt maps each dylib to its package.
+share/licenses/dylibs.txt maps each file to its package.
 
 It is not CrossOver and is not made or supported by CodeWeavers.
 
@@ -54,12 +55,27 @@ It is not CrossOver and is not made or supported by CodeWeavers.
 - Its SHA-256: $CX_SOURCE_SHA256
 - A copy of that tarball is attached to the same release as this archive:
   https://github.com/$repository/releases/tag/$tag
+- GStreamer $GST_VERSION (LGPL; core, base, good, bad, ugly and gst-libav, only
+  the LGPL plugins listed in packaging/wine-crossover/gstreamer-plugins.txt) is
+  built from the sources/gstreamer folder of that same CodeWeavers tarball
+- FFmpeg $FFMPEG_VERSION (LGPL 2.1 or later, decoders only, no GPL or nonfree
+  parts), used by gst-libav, is built from $FFMPEG_URL
+  (SHA-256 $FFMPEG_SHA256); a copy is attached to the release as
+  ffmpeg-$FFMPEG_VERSION.tar.xz
 - The source archives of the bundled Homebrew libraries (share/licenses/formulas.txt
   lists them with their versions) are attached to that release too, as
   brew-<formula>-<version>.<ext>
 - Build scripts: https://github.com/$repository/tree/$commit/packaging/wine-crossover
 - Toolchain: Xcode at $XCODE_APP, llvm-mingw $LLVM_MINGW_VERSION, macOS $MACOSX_DEPLOYMENT_TARGET target,
-  Homebrew $BREW_BUILD_DEPS $BREW_LINK_DEPS (versions in BUILDINFO.txt)
+  Homebrew $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS (versions in BUILDINFO.txt)
+
+## GStreamer at run time
+
+winegstreamer finds the plugins in lib/gstreamer-1.0 by itself: libgstreamer
+looks next to its own file when GST_PLUGIN_SYSTEM_PATH_1_0 is unset. To keep a
+GStreamer installed on the Mac out of it, a launcher may also set
+GST_PLUGIN_SYSTEM_PATH_1_0=<this folder>/lib/gstreamer-1.0, an empty
+GST_PLUGIN_PATH_1_0 and GST_REGISTRY_1_0 to a writable file of its own.
 EOF
 
 {
@@ -67,9 +83,11 @@ EOF
     echo "build_revision=$BUILD_REVISION"
     echo "commit=$commit"
     echo "llvm_mingw=$LLVM_MINGW_VERSION"
+    echo "gstreamer=$GST_VERSION"
+    echo "ffmpeg=$FFMPEG_VERSION"
     if command -v brew >/dev/null 2>&1; then
         # shellcheck disable=SC2086
-        brew list --versions $BREW_BUILD_DEPS $BREW_LINK_DEPS 2>/dev/null | sed 's/^/brew: /'
+        brew list --versions $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS 2>/dev/null | sed 's/^/brew: /'
     fi
     if command -v xcodebuild >/dev/null 2>&1; then xcodebuild -version 2>/dev/null | tr '\n' ' ' | sed 's/^/xcode: /'; echo; fi
 } > "$root/BUILDINFO.txt"
