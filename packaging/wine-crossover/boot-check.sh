@@ -95,6 +95,22 @@ if [ "$rc" -ne 0 ]; then
             ls -l "$root/lib/wine/$arch/kernel32.dll" "$root/lib/wine/$arch/ntdll.dll" 2>&1
         done
     } >&2 || true
+    # Which part hangs: the same first boot with the controller driver off, then with
+    # SDL's GameController (MFi) backend off, each in its own fresh prefix
+    for variant in "winebus-off" "sdl-mfi-off"; do
+        export WINEPREFIX="$work/prefix-$variant"
+        case "$variant" in
+            winebus-off) probe() { WINEDLLOVERRIDES="mscoree,mshtml=;winebus.sys=d" WINEDEBUG=err+all \
+                "$root/bin/wine" wineboot -i && "$root/bin/wineserver" -w; } ;;
+            sdl-mfi-off) probe() { SDL_JOYSTICK_MFI=0 WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=err+all \
+                "$root/bin/wine" wineboot -i && "$root/bin/wineserver" -w; } ;;
+        esac
+        t=$(date +%s)
+        prc=0
+        limited 600 "$out/wineboot-$variant.log" probe || prc=$?
+        echo "boot-check: first boot with $variant: rc=$prc in $(( $(date +%s) - t )) s" >&2
+        "$root/bin/wineserver" -k 2>/dev/null || true
+    done
     fail "init-failed rc=$rc" "$out/wineboot.log" "prefix initialization exited $rc"
 fi
 echo "boot-check: prefix initialized in $init_seconds s"
