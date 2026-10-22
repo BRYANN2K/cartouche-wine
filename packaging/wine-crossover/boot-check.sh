@@ -95,21 +95,33 @@ if [ "$rc" -ne 0 ]; then
             ls -l "$root/lib/wine/$arch/kernel32.dll" "$root/lib/wine/$arch/ntdll.dll" 2>&1
         done
     } >&2 || true
-    # Which part hangs: the same first boot with the controller driver off, then with
-    # SDL's GameController (MFi) backend off, each in its own fresh prefix
-    for variant in "winebus-off" "sdl-mfi-off"; do
+    # Which part hangs: the published 26.3.0-1 on this same runner image, then this
+    # build with its bundled addon folders moved away, each in its own fresh prefix
+    ref_url=https://github.com/BRYANN2K/cartouche-wine/releases/download/wine-crossover-26.3.0-1/wine-crossover-26.3.0-1-x86_64.tar.xz
+    ref_sha=60400817826a053599193aa290d4e24e97213a743195f4187400bf9c74906887
+    mkdir -p "$work/ref"
+    if curl -fsSL -o "$work/ref.tar.xz" "$ref_url" \
+        && [ "$(shasum -a 256 "$work/ref.tar.xz" | cut -d" " -f1)" = "$ref_sha" ] \
+        && tar -xJf "$work/ref.tar.xz" -C "$work/ref"; then
+        ref_root="$work/ref/wine-crossover-26.3.0-1"
+    else
+        ref_root=
+        echo "boot-check: could not fetch the 26.3.0-1 reference" >&2
+    fi
+    for variant in reference-26.3.0-1 no-addon-folders; do
         export WINEPREFIX="$work/prefix-$variant"
         case "$variant" in
-            winebus-off) probe() { WINEDLLOVERRIDES="mscoree,mshtml=;winebus.sys=d" WINEDEBUG=err+all \
-                "$root/bin/wine" wineboot -i && "$root/bin/wineserver" -w; } ;;
-            sdl-mfi-off) probe() { SDL_JOYSTICK_MFI=0 WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=err+all \
-                "$root/bin/wine" wineboot -i && "$root/bin/wineserver" -w; } ;;
+            reference-26.3.0-1) [ -n "$ref_root" ] || continue; vroot=$ref_root ;;
+            no-addon-folders) vroot=$root; mv "$root/share/wine/mono" "$work/mono.off"; mv "$root/share/wine/gecko" "$work/gecko.off" ;;
         esac
+        probe() { WINEDLLOVERRIDES="mscoree,mshtml=" WINEDEBUG=err+all "$vroot/bin/wine" wineboot -i \
+            && "$vroot/bin/wineserver" -w; }
         t=$(date +%s)
         prc=0
         limited 600 "$out/wineboot-$variant.log" probe || prc=$?
         echo "boot-check: first boot with $variant: rc=$prc in $(( $(date +%s) - t )) s" >&2
-        "$root/bin/wineserver" -k 2>/dev/null || true
+        grep "err:\|could not load" "$out/wineboot-$variant.log" | head -n 5 >&2 || true
+        "$vroot/bin/wineserver" -k 2>/dev/null || true
     done
     fail "init-failed rc=$rc" "$out/wineboot.log" "prefix initialization exited $rc"
 fi
