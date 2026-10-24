@@ -4,6 +4,19 @@ name: wine-crossover
 # packaging/wine-crossover/pins.env, checks the result, and on request publishes
 # it as a release asset with its SHA-256, the runner manifest entry and a copy
 # of the source tarball (the LGPL source offer). No secret is needed.
+# Paused: GitHub Actions is blocked by billing. Woodpecker runs this as
+# .woodpecker/wine-crossover.yaml. Restore the triggers below to switch back.
+#   workflow_dispatch:
+#     inputs:
+#       publish:
+#         description: Publish the build as a release (from the default branch only)
+#         type: boolean
+#         default: false
+#   pull_request:
+#     paths:
+#       - packaging/wine-crossover/**
+#       - packaging/tests/test_wine_crossover.py
+#       - .github/workflows/wine-crossover.yml
 on:
   workflow_dispatch:
     inputs:
@@ -11,11 +24,6 @@ on:
         description: Publish the build as a release (from the default branch only)
         type: boolean
         default: false
-  pull_request:
-    paths:
-      - packaging/wine-crossover/**
-      - packaging/tests/test_wine_crossover.py
-      - .github/workflows/wine-crossover.yml
 
 permissions:
   contents: read

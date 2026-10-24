@@ -9,6 +9,22 @@ name: runner-manifest
 # Nothing promotes a build on its own: GitHub's macOS Intel image can no longer
 # boot a prefix, so the maintainer runs this only after the build booted and
 # passed a controller test on a real Mac.
+# Paused: GitHub Actions is blocked by billing. Woodpecker runs this as
+# .woodpecker/runner-manifest.yaml. Restore the triggers below to switch back.
+#   workflow_dispatch:
+#     inputs:
+#       build_id:
+#         description: Release to promote, e.g. wine-crossover-26.3.0-3
+#         required: true
+#         type: string
+#       confirm_tested:
+#         description: I booted this build and passed a controller test on a real Mac
+#         type: boolean
+#         default: false
+#   pull_request:
+#     paths:
+#       - manifest/**
+#       - .github/workflows/runner-manifest.yml
 on:
   workflow_dispatch:
     inputs:
@@ -20,10 +36,6 @@ on:
         description: I booted this build and passed a controller test on a real Mac
         type: boolean
         default: false
-  pull_request:
-    paths:
-      - manifest/**
-      - .github/workflows/runner-manifest.yml
 
 permissions:
   contents: read
