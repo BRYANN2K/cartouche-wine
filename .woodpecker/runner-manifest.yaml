@@ -33,11 +33,11 @@ steps:
         from_secret: sparkle_private_key
     commands:
       - |
-        if [ "${CONFIRM_TESTED:-}" != true ]; then
+        if [ "$${CONFIRM_TESTED:-}" != true ]; then
           echo "Boot $BUILD_ID and pass a controller test on a real Mac first, then run again with CONFIRM_TESTED=true" >&2
           exit 1
         fi
-        printf '%s\n' "${BUILD_ID:-}" | grep -Eqx 'wine-crossover-[0-9][0-9.]*-[0-9]+' || {
+        printf '%s\n' "$${BUILD_ID:-}" | grep -Eqx 'wine-crossover-[0-9][0-9.]*-[0-9]+' || {
           echo "BUILD_ID is not a Cartouche Wine release tag (wine-crossover-<version>-<revision>)" >&2
           exit 1
         }
@@ -53,7 +53,7 @@ steps:
         url=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' /tmp/entry/manifest-entry.json)
         size=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["size"])' /tmp/entry/manifest-entry.json)
         gh api "repos/$CI_REPO/releases/tags/$BUILD_ID" --jq '.assets[] | "\(.name) \(.size)"' > /tmp/assets.txt
-        grep -Fqx "${url##*/} $size" /tmp/assets.txt || { echo "$BUILD_ID has no asset ${url##*/} of $size bytes" >&2; exit 1; }
+        grep -Fqx "$${url##*/} $size" /tmp/assets.txt || { echo "$BUILD_ID has no asset $${url##*/} of $size bytes" >&2; exit 1; }
       - |
         PUBLISHED=""
         if gh release view manifest --repo "$CI_REPO" >/dev/null 2>&1; then
@@ -79,7 +79,7 @@ steps:
         git config user.email "ci@bryann2k.dev"
         git add "$MANIFEST"
         git commit -m "runner manifest: revision $revision, promotes $BUILD_ID [skip ci]"
-        git push "https://x-access-token:${GH_TOKEN}@github.com/${CI_REPO}.git" HEAD:refs/heads/main
+        git push "https://x-access-token:$${GH_TOKEN}@github.com/${CI_REPO}.git" HEAD:refs/heads/main
       - |
         cp "$MANIFEST" /tmp/runners.json
         if ! gh release view manifest --repo "$CI_REPO" >/dev/null 2>&1; then
