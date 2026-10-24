@@ -1,0 +1,83 @@
+# Port of .github/workflows/wine-crossover.yml on the Mac agent (local backend).
+# Wine's Unix side is x86_64: the build runs under Rosetta with an Intel
+# Homebrew in /usr/local. A manual run builds; PUBLISH=true on main also
+# publishes the prerelease. Downloads are kept across runs in
+# ~/Library/Caches/woodpecker/wine-crossover-downloads.
+labels:
+  platform: darwin/arm64
+
+when:
+  - event: pull_request
+    path: ['packaging/wine-crossover/**', packaging/tests/test_wine_crossover.py, .woodpecker/wine-crossover.yaml]
+  - event: manual
+
+steps:
+  - name: scripts
+    image: bash
+    commands:
+      - python3 -m unittest discover -s packaging/tests -p 'test_wine_crossover.py'
+      - sh packaging/wine-crossover/build.sh --dry-run "$CI_WORKSPACE/../wine-dry"
+
+  - name: build
+    image: bash
+    when:
+      - event: manual
+    environment:
+      PATH: /usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin
+    commands:
+      - test -x /usr/local/bin/brew || { echo "Install an Intel Homebrew in /usr/local first (arch -x86_64)" >&2; exit 1; }
+      - cache="$HOME/Library/Caches/woodpecker/wine-crossover-downloads" && mkdir -p "$cache" work && ln -sfn "$cache" work/downloads
+      - |
+        . packaging/wine-crossover/pins.env
+        fetch() { arch -x86_64 sh packaging/wine-crossover/fetch.sh "$@"; }
+        fetch "$CX_SOURCE_URL" "$CX_SOURCE_SHA256" "work/downloads/crossover-sources-$CX_VERSION.tar.gz"
+        fetch "$LLVM_MINGW_URL" "$LLVM_MINGW_SHA256" "work/downloads/llvm-mingw-$LLVM_MINGW_VERSION.tar.xz"
+        fetch "$WINE_MONO_URL" "$WINE_MONO_SHA256" "work/downloads/wine-mono-$WINE_MONO_VERSION-x86.tar.xz"
+        fetch "$WINE_GECKO_X86_URL" "$WINE_GECKO_X86_SHA256" "work/downloads/wine-gecko-$WINE_GECKO_VERSION-x86.tar.xz"
+        fetch "$WINE_GECKO_X86_64_URL" "$WINE_GECKO_X86_64_SHA256" "work/downloads/wine-gecko-$WINE_GECKO_VERSION-x86_64.tar.xz"
+        fetch "$WINE_MONO_LICENSE_URL" "$WINE_MONO_LICENSE_SHA256" "work/downloads/wine-mono-$WINE_MONO_VERSION-COPYING"
+        fetch "$WINE_GECKO_LICENSE_URL" "$WINE_GECKO_LICENSE_SHA256" "work/downloads/wine-gecko-$WINE_GECKO_VERSION-LICENSE"
+        fetch "$WINE_GECKO_LICENSE_HTML_URL" "$WINE_GECKO_LICENSE_HTML_SHA256" "work/downloads/wine-gecko-$WINE_GECKO_VERSION-license.html"
+        fetch "$FFMPEG_URL" "$FFMPEG_SHA256" "work/downloads/ffmpeg-$FFMPEG_VERSION.tar.xz"
+      - . packaging/wine-crossover/pins.env && arch -x86_64 /usr/local/bin/brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS
+      - arch -x86_64 sh packaging/wine-crossover/build.sh "$PWD/work"
+      - |
+        . packaging/wine-crossover/pins.env
+        arch -x86_64 sh packaging/wine-crossover/package.sh work/install "work/downloads/crossover-sources-$CX_VERSION.tar.gz" out
+        mkdir -p out/brew-sources
+        for f in work/brew-sources/*; do cp "$f" "out/brew-sources/brew-$(basename "$f")"; done
+        cp "work/downloads/ffmpeg-$FFMPEG_VERSION.tar.xz" out/
+        cat out/manifest-entry.json
+      - arch -x86_64 sh packaging/wine-crossover/verify.sh out/*-x86_64.tar.xz | tee out/verify.txt
+      - arch -x86_64 sh packaging/redist-scan.sh out/*-x86_64.tar.xz
+      - |
+        runner="$CI_WORKSPACE/../runner" && mkdir -p "$runner"
+        tar -xJf out/*-x86_64.tar.xz -C "$runner"
+        BOOT_DIAG=1 arch -x86_64 sh packaging/wine-crossover/boot-check.sh "$runner/$(cat out/tag)" out/boot 180
+      - keep="$HOME/Library/Caches/woodpecker/wine-crossover/$CI_PIPELINE_NUMBER" && mkdir -p "$keep" && cp -R out/. "$keep/" && echo "kept in $keep"
+
+  - name: publish
+    image: bash
+    when:
+      - event: manual
+        branch: main
+        evaluate: 'PUBLISH == "true"'
+    environment:
+      GH_TOKEN:
+        from_secret: git_push_token
+    commands:
+      - |
+        . packaging/wine-crossover/pins.env
+        TAG="$(cat out/tag)"
+        sh packaging/wine-crossover/fetch.sh "$CX_SOURCE_URL" "$CX_SOURCE_SHA256" "out/crossover-sources-$CX_VERSION.tar.gz"
+        if gh release view "$TAG" --repo "$CI_REPO" >/dev/null 2>&1; then
+          echo "$TAG is already released; bump BUILD_REVISION in pins.env" >&2
+          exit 1
+        fi
+        tar -xJOf "out/$TAG-x86_64.tar.xz" "$TAG/SOURCE.md" > out/SOURCE.md
+        gh release create "$TAG" --repo "$CI_REPO" --prerelease --latest=false \
+          --title "Cartouche Wine $CX_VERSION-$BUILD_REVISION" --notes-file out/SOURCE.md \
+          "out/$TAG-x86_64.tar.xz" "out/$TAG-x86_64.tar.xz.sha256" out/manifest-entry.json \
+          out/SOURCE.md "out/crossover-sources-$CX_VERSION.tar.gz" "out/ffmpeg-$FFMPEG_VERSION.tar.xz" \
+          out/brew-sources/*
+        echo "$TAG is a prerelease. Test it on a real Mac, then run runner-manifest with BUILD_ID=$TAG CONFIRM_TESTED=true."

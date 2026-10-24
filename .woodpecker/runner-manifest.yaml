@@ -1,0 +1,96 @@
+# Port of .github/workflows/runner-manifest.yml. Promotion is a manual run on
+# main with the variables BUILD_ID=wine-crossover-<version>-<revision> and
+# CONFIRM_TESTED=true (set them in "Run pipeline").
+when:
+  - event: pull_request
+    path: ['manifest/**', .woodpecker/runner-manifest.yaml]
+  - event: manual
+    branch: main
+
+variables:
+  - &python docker.io/library/python:3.12-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70
+  - &venv python3 -m venv /tmp/venv && /tmp/venv/bin/pip install --quiet --disable-pip-version-check "cryptography==50.0.1"
+
+steps:
+  - name: check
+    image: *python
+    commands:
+      - *venv
+      - /tmp/venv/bin/python -m unittest discover -s manifest/tests -p "test_*.py"
+      - python3 manifest/runner_manifest.py check manifest/runners.json
+
+  - name: publish
+    image: *python
+    when:
+      - event: manual
+        branch: main
+    environment:
+      APP_PUBLIC_KEY: GQF06ayCCpIxh8XlQPQYWTwbYO2SckfWqr9rYCuJrqI=
+      MANIFEST: manifest/runners.json
+      GH_TOKEN:
+        from_secret: git_push_token
+      SPARKLE_PRIVATE_KEY:
+        from_secret: sparkle_private_key
+    commands:
+      - |
+        if [ "$${CONFIRM_TESTED:-}" != true ]; then
+          echo "Boot $BUILD_ID and pass a controller test on a real Mac first, then run again with CONFIRM_TESTED=true" >&2
+          exit 1
+        fi
+        printf '%s\n' "$${BUILD_ID:-}" | grep -Eqx 'wine-crossover-[0-9][0-9.]*-[0-9]+' || {
+          echo "BUILD_ID is not a Cartouche Wine release tag (wine-crossover-<version>-<revision>)" >&2
+          exit 1
+        }
+      - apt-get update -qq && apt-get install -y -qq --no-install-recommends git curl ca-certificates >/dev/null
+      - curl -fsSL -o /tmp/gh.tar.gz https://github.com/cli/cli/releases/download/v2.103.2/gh_2.103.2_linux_amd64.tar.gz
+      - echo "62ccf747115ddc61237efffdde66a3c8f70ba249433dc64f70801089b59c59c8  /tmp/gh.tar.gz" | sha256sum -c -
+      - tar -xzf /tmp/gh.tar.gz -C /tmp && install /tmp/gh_2.103.2_linux_amd64/bin/gh /usr/local/bin/gh
+      - *venv
+      - export GITHUB_REPOSITORY="$CI_REPO"
+      - mkdir -p /tmp/entry /tmp/published
+      - gh release download "$BUILD_ID" --repo "$CI_REPO" --pattern manifest-entry.json --dir /tmp/entry
+      - |
+        url=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["url"])' /tmp/entry/manifest-entry.json)
+        size=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["size"])' /tmp/entry/manifest-entry.json)
+        gh api "repos/$CI_REPO/releases/tags/$BUILD_ID" --jq '.assets[] | "\(.name) \(.size)"' > /tmp/assets.txt
+        grep -Fqx "$${url##*/} $size" /tmp/assets.txt || { echo "$BUILD_ID has no asset $${url##*/} of $size bytes" >&2; exit 1; }
+      - |
+        PUBLISHED=""
+        if gh release view manifest --repo "$CI_REPO" >/dev/null 2>&1; then
+          gh release download manifest --repo "$CI_REPO" --pattern runners.json --dir /tmp/published
+          PUBLISHED=/tmp/published/runners.json
+        fi
+        python3 manifest/runner_manifest.py add-entry "$MANIFEST" --from /tmp/entry/manifest-entry.json --build-id "$BUILD_ID"
+        if [ -n "$PUBLISHED" ]; then
+          python3 manifest/runner_manifest.py bump "$MANIFEST" --published "$PUBLISHED"
+          python3 manifest/runner_manifest.py check "$MANIFEST" --published "$PUBLISHED"
+        else
+          python3 manifest/runner_manifest.py bump "$MANIFEST"
+          python3 manifest/runner_manifest.py check "$MANIFEST"
+        fi
+        git diff -- "$MANIFEST"
+      - test -n "$SPARKLE_PRIVATE_KEY"
+      - /tmp/venv/bin/python manifest/runner_manifest.py sign "$MANIFEST" --out /tmp/runners.json.sig --public-key "$APP_PUBLIC_KEY"
+      - /tmp/venv/bin/python manifest/runner_manifest.py verify "$MANIFEST" /tmp/runners.json.sig --public-key "$APP_PUBLIC_KEY"
+      - |
+        revision=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["revision"])' "$MANIFEST")
+        git config --global --add safe.directory "$CI_WORKSPACE"
+        git config user.name "Woodpecker CI"
+        git config user.email "ci@bryann2k.dev"
+        git add "$MANIFEST"
+        git commit -m "runner manifest: revision $revision, promotes $BUILD_ID [skip ci]"
+        git push "https://x-access-token:$${GH_TOKEN}@github.com/${CI_REPO}.git" HEAD:refs/heads/main
+      - |
+        cp "$MANIFEST" /tmp/runners.json
+        if ! gh release view manifest --repo "$CI_REPO" >/dev/null 2>&1; then
+          gh release create manifest --repo "$CI_REPO" --prerelease --latest=false --title "Runner manifest" \
+            --notes "The signed list of Wine builds the Cartouche app offers in Settings > Runners. Published by .woodpecker/runner-manifest.yaml; see manifest/README.md."
+        fi
+        gh release upload manifest --repo "$CI_REPO" /tmp/runners.json /tmp/runners.json.sig --clobber
+      - |
+        base="https://github.com/$CI_REPO/releases/download/manifest"
+        mkdir -p /tmp/live
+        curl -fsSL --retry 5 --retry-delay 10 -o /tmp/live/runners.json "$base/runners.json"
+        curl -fsSL --retry 5 --retry-delay 10 -o /tmp/live/runners.json.sig "$base/runners.json.sig"
+        cmp /tmp/live/runners.json "$MANIFEST"
+        /tmp/venv/bin/python manifest/runner_manifest.py verify /tmp/live/runners.json /tmp/live/runners.json.sig --public-key "$APP_PUBLIC_KEY"
