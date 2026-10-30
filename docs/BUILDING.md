@@ -13,7 +13,7 @@ The development recipe includes GStreamer and FFmpeg. Allow additional build tim
 | Homebrew | With the formulas in `pins.env`: build tools `bison flex pkgconf meson ninja nasm`, link libraries `freetype gnutls molten-vk sdl2 sdl3`, and `glib` for GStreamer (`BREW_GST_DEPS`). |
 | Python 3 | For `check_dlopen.py`, `manifest_entry.py` and the tests. |
 | Network | To fetch the pinned downloads. |
-| Disk | Several GB for the sources, the build tree and the install tree. <!-- TODO verify: measured disk use --> |
+| Disk | Several GB for the sources, the build tree and the install tree. Estimate of 2026-10-30, not measured on a full build: sources 0.75 GB unpacked, llvm-mingw 0.76 GB, Wine build tree 3 to 4 GB (the PE side keeps its DWARF), GStreamer and FFmpeg about 1 GB, install tree 1.6 GB, archive 0.3 GB, Homebrew source archives 0.2 GB: plan on 10 GB free plus the x86_64 Homebrew. |
 
 The deployment target is macOS 15.0 (`MACOSX_DEPLOYMENT_TARGET` in `pins.env`).
 
@@ -79,17 +79,18 @@ What `build.sh` does, in order:
 1. Checks the architecture and the SHA-256 of every download.
 2. Sets `DEVELOPER_DIR` and `MACOSX_DEPLOYMENT_TARGET`.
 3. Empties `src`, `build`, `deps`, `install` and `llvm-mingw` under the work folder, then unpacks the sources and llvm-mingw.
-4. Checks that `dlls/appwiz.cpl/addons.c` in the sources defines the Mono and Gecko versions in `pins.env`, and that `sources/gstreamer` is `GST_VERSION`. If they differ, update the pins.
-5. Puts llvm-mingw, `bison` and `flex` first in `PATH`.
-6. Runs `build-gstreamer.sh`: FFmpeg (LGPL, decoders only) into `work/ffmpeg`, then GStreamer core, base, good, bad, ugly and gst-libav with meson into `work/gst`, only the plugins in `gstreamer-plugins.txt`. `build-gstreamer.sh --dry-run` prints the commands. [CHANGES.md](CHANGES.md#gstreamer-from-2630-3) explains the choices.
-7. Copies the five link libraries, the GStreamer libraries winegstreamer links, and every non-system dylib they load into `deps/lib` with `bundle-deps.sh`; the plugins go to `deps/lib/gstreamer-1.0` and `gst-inspect-1.0` to `deps/libexec/gstreamer-1.0`. Names become `@rpath/...`, and each copy is ad-hoc signed. `deps/origins.txt` records where each file came from.
-8. Runs Wine's `configure` against that folder, with `GSTREAMER_CFLAGS` and `GSTREAMER_LIBS` pointing at the bundled GStreamer. [CHANGES.md](CHANGES.md) lists the flags and why.
-9. `make`, then `make install-lib` into `install/`. Stops if `winegstreamer.so` was not built.
-10. Copies `deps/lib` and `deps/libexec` into `install/`.
-11. Unpacks Wine Mono and Wine Gecko into `install/share/wine/mono` and `gecko`.
-12. Runs `collect-licenses.sh`: license files of every bundled formula go into `install/share/licenses/<formula>/`, their source archives into `work/brew-sources/`. GStreamer's and FFmpeg's notices are copied from their trees, Mono's and Gecko's from the pinned downloads.
-13. Runs the checks: `check-deps.sh`, `check_dlopen.py`, `check-sdl.sh`, `check-licenses.sh`, `check-gstreamer.sh`.
-14. Runs `install/bin/wine --version`.
+4. Applies the patches of `patches/series` to `sources/wine`, in order. Each must match its SHA-256 in the series and pass `patch --dry-run` with no fuzz first ([CHANGES.md](CHANGES.md#source-patches)).
+5. Checks that `dlls/appwiz.cpl/addons.c` in the sources defines the Mono and Gecko versions in `pins.env`, and that `sources/gstreamer` is `GST_VERSION`. If they differ, update the pins.
+6. Puts llvm-mingw, `bison` and `flex` first in `PATH`.
+7. Runs `build-gstreamer.sh`, unless `work/gst.key` shows that its inputs (the script, the plugin list, the tarball and FFmpeg hashes, the deployment target, the Homebrew and Xcode versions) have not changed since the last build. `CACHE_GSTREAMER=0` forces it. The script: FFmpeg (LGPL, decoders only) into `work/ffmpeg`, then GStreamer core, base, good, bad, ugly and gst-libav with meson into `work/gst`, only the plugins in `gstreamer-plugins.txt`. `build-gstreamer.sh --dry-run` prints the commands. [CHANGES.md](CHANGES.md#gstreamer-from-2630-3) explains the choices.
+8. Copies the five link libraries, the GStreamer libraries winegstreamer links, and every non-system dylib they load into `deps/lib` with `bundle-deps.sh`; the plugins go to `deps/lib/gstreamer-1.0` and `gst-inspect-1.0` to `deps/libexec/gstreamer-1.0`. Names become `@rpath/...`, and each copy is ad-hoc signed. `deps/origins.txt` records where each file came from.
+9. Runs Wine's `configure` against that folder, with `GSTREAMER_CFLAGS` and `GSTREAMER_LIBS` pointing at the bundled GStreamer. [CHANGES.md](CHANGES.md) lists the flags and why.
+10. `make -j$JOBS` (default: all CPUs), then `make install-lib` into `install/`. With `ccache` installed, `configure` gets `CC`, `x86_64_CC` and `i386_CC` through it (`CCACHE=0` turns that off). Stops if `winegstreamer.so` was not built.
+11. Copies `deps/lib` and `deps/libexec` into `install/`.
+12. Unpacks Wine Mono and Wine Gecko into `install/share/wine/mono` and `gecko`.
+13. Runs `collect-licenses.sh`: license files of every bundled formula go into `install/share/licenses/<formula>/`, their source archives into `work/brew-sources/`. GStreamer's and FFmpeg's notices are copied from their trees, Mono's and Gecko's from the pinned downloads.
+14. Runs the checks: `check-deps.sh`, `check_dlopen.py`, `check-sdl.sh`, `check-licenses.sh`, `check-gstreamer.sh`.
+15. Runs `install/bin/wine --version`.
 
 ### 4. Package
 
@@ -121,6 +122,34 @@ sh packaging/wine-crossover/boot-check.sh "work/runner/$(cat out/tag)" out/boot 
 ```
 
 See [RELEASING.md](RELEASING.md) for what it checks and its options.
+
+### A local build that keeps the Mac usable
+
+```sh
+JOBS=4 nice -n 15 sh packaging/wine-crossover/build.sh "$PWD/work"
+```
+
+### Rebuilding one DLL to test a patch
+
+A patch that only touches PE code (such as `0001-wined3d-gpu-identity.patch`) can be tested without the full build. It needs the pinned sources and llvm-mingw, not Homebrew's x86_64 libraries. On Apple silicon, Xcode's `clang` may be arm64 only, so give configure an explicit x86_64 host compiler. About 30 s and 200 MB of build tree on an M4 (2026-10-30):
+
+```sh
+mkdir -p work/src work/llvm-mingw work/build
+tar -xzf work/downloads/crossover-sources-26.3.0.tar.gz -C work/src sources/wine
+tar -xJf work/downloads/llvm-mingw-20261006.tar.xz -C work/llvm-mingw --strip-components 1
+for p in $(awk '!/^#/ { print $2 }' packaging/wine-crossover/patches/series); do
+  patch -p1 -F 0 -d work/src/sources/wine -i "$PWD/packaging/wine-crossover/patches/$p"
+done
+cd work/build
+export PATH="$PWD/../llvm-mingw/bin:$(brew --prefix bison)/bin:$(brew --prefix flex)/bin:$PATH"
+arch -x86_64 /usr/bin/env PATH="$PATH" ../src/sources/wine/configure --enable-archs=i386,x86_64 \
+  --disable-tests --with-mingw --without-freetype --without-gnutls --without-opengl --without-vulkan \
+  --without-sdl --without-gstreamer --without-x --without-coreaudio "CC=/usr/bin/clang -arch x86_64"
+arch -x86_64 /usr/bin/env PATH="$PATH" nice -n 15 make -j6 \
+  dlls/wined3d/x86_64-windows/wined3d.dll dlls/wined3d/i386-windows/wined3d.dll
+```
+
+Built from the unpatched sources this way, `wined3d.dll` has the same code section size as the 26.3.0-2 release; the other differences are the source paths embedded in strings and debug info. Copy the DLLs into a **copy** of an installed runner (APFS clone: `cp -cRp`), never into the runner the app uses. Then run `check-gpu-identity.sh <runner> work/llvm-mingw work/check`.
 
 ### The script tests
 

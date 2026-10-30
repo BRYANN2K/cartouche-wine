@@ -1,0 +1,60 @@
+From: Cartouche Wine
+Subject: [PATCH] loader: Cartouche bundle identity and Game Mode keys.
+
+Applies to sources/wine of crossover-sources-26.3.0.tar.gz (SHA-256
+ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872, Wine 11.0).
+
+The wine loader embeds loader/wine_info.plist in its __TEXT,__info_plist
+section. CodeWeavers' copy (CrossOver Hack 10913) names it
+com.codeweavers.CrossOver.wineloader / "CrossOver-Hosted Application", so
+the macOS application menu of every game reads "Quit CrossOver-Hosted
+Application". Cartouche Wine is not CrossOver.
+
+- CFBundleIdentifier dev.bryann2k.cartouche.wineloader, CFBundleName
+  "Cartouche Wine" (the menu reads "Quit Cartouche Wine").
+- LSApplicationCategoryType public.app-category.games, LSSupportsGameMode
+  (macOS 26+) and GCSupportsGameMode (macOS 14+). They make the process
+  eligible for Game Mode; macOS decides, in full screen only, so it is not
+  guaranteed to start.
+  https://developer.apple.com/documentation/bundleresources/information-property-list/lssupportsgamemode
+
+A new bundle identifier may make macOS ask again for permissions it had
+granted to the old one (not verified).
+
+---
+--- a/loader/wine_info.plist.in
++++ b/loader/wine_info.plist.in
+@@ -1,5 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<!-- Modified by Cartouche Wine on 2026-10-30: bundle identifier, name, Game Mode keys. -->
+ <plist version="1.0">
+ <dict>
+     <key>CFBundleAllowMixedLocalizations</key>
+@@ -9,11 +10,11 @@
+     <key>CFBundleExecutable</key>
+     <string>wineloader</string><!-- CrossOver Hack 10913 -->
+     <key>CFBundleIdentifier</key>
+-    <string>com.codeweavers.CrossOver.wineloader</string><!-- CrossOver Hack 10913 -->
++    <string>dev.bryann2k.cartouche.wineloader</string><!-- CrossOver Hack 10913, Cartouche Wine -->
+     <key>CFBundleInfoDictionaryVersion</key>
+     <string>6.0</string>
+     <key>CFBundleName</key>
+-    <string>CrossOver-Hosted Application</string><!-- CrossOver Hack 10913 -->
++    <string>Cartouche Wine</string><!-- CrossOver Hack 10913, Cartouche Wine -->
+     <key>CFBundlePackageType</key>
+     <string>APPL</string>
+     <key>CFBundleShortVersionString</key>
+@@ -26,5 +27,12 @@
+     <string>WineApplication</string>
+     <key>LSUIElement</key>
+     <string>1</string>
++    <!-- Game Mode eligibility; macOS still decides, in full screen only -->
++    <key>LSApplicationCategoryType</key>
++    <string>public.app-category.games</string>
++    <key>LSSupportsGameMode</key>
++    <true/>
++    <key>GCSupportsGameMode</key>
++    <true/>
+ </dict>
+ </plist>

@@ -4,7 +4,36 @@ This document is for people who want to know exactly what Cartouche Wine changes
 
 ## Source patches
 
-**None.** `build.sh` unpacks `crossover-sources-26.3.0.tar.gz` (SHA-256 `ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872`) and builds `sources/wine` as it is. No `patch` step exists. Anyone can rebuild the binaries from CodeWeavers' tarball and the scripts in this repository.
+Up to 26.3.0-2: **none**. From 26.3.0-3, `build.sh` unpacks `crossover-sources-26.3.0.tar.gz` (SHA-256 `ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872`, unchanged) and applies the patches in `packaging/wine-crossover/patches/` to `sources/wine`, in the order of `patches/series`. Anyone can rebuild the binaries from CodeWeavers' tarball and the scripts in this repository.
+
+How they are applied:
+
+- `patches/series` lists each patch with its SHA-256. `build.sh` refuses a patch that is missing from the list or does not match its hash.
+- Each patch is tried with `patch --dry-run` first, then applied with no fuzz (`-F 0`). A new tarball therefore stops the build instead of patching the wrong lines.
+- Every modified file carries a line `Modified by Cartouche Wine on <date>: <what>` (LGPL 2.1 section 2). A test checks it.
+- `SOURCE.md` and `BUILDINFO.txt` in the archive name the patches and their hashes.
+
+| Patch | Files | Why |
+| --- | --- | --- |
+| `0001-wined3d-gpu-identity.patch` | `dlls/wined3d/directx.c`, `wined3d_private.h`, `wined3d_main.c`, `adapter_gl.c` | Games read the driver version through D3D9 (also DXGI, D3D8, DirectDraw), all from `wined3d_driver_info_init()`. Wine's newest NVIDIA version was 531.18 (`31.0.15.3118`). Deadlock logs « old driver » for it and never loads NVAPI or NGX. See below. |
+| `0002-loader-cartouche-identity-game-mode.patch` | `loader/wine_info.plist.in` | The macOS menu of every game read « Quit CrossOver-Hosted Application ». Cartouche Wine is not CrossOver. Adds the Game Mode keys. |
+| `0003-cartouche-visible-names.patch` | `dlls/ieframe/iexplore.c`, `programs/iexplore/iexplore.inf` | « CrossOver Web Browser » and « CrossOver HTML engine » were visible in prefixes. |
+
+### GPU identity (0001)
+
+- **New driver entry** `DRIVER_NVIDIA_TURING`: NVIDIA 581.57 (Game Ready, 2025-10-14), Windows version `32.0.15.8157`. The public number is the last digit of the third word and the fourth word. The Turing and newer cards use it: GTX 16, RTX 20 to 50, Tesla T4, A10. Older cards keep 531.18.
+- **RTX 50 cards**, IDs from the [PCI ID database](https://pci-ids.ucw.cz/read/PC/10de) (`pci.ids` 2026.10.30): `0x2b85` RTX 5090 (GB202, 32 GB), `0x2c02` RTX 5080 (GB203, 16 GB), `0x2c05` RTX 5070 Ti (GB203, 16 GB), `0x2f04` RTX 5070 (GB205, 12 GB). Also in the GL renderer table.
+- **New setting `VideoDriverVersion`**, a string `a.b.c.d`. It is read like `VideoPciDeviceID`: `HKCU\Software\Wine\Direct3D`, the per-application `AppDefaults\<exe>\Direct3D` key, or `WINE_D3D_CONFIG`. It replaces the reported version for any vendor. Example: `WINE_D3D_CONFIG="VideoPciVendorID=0x10de,VideoPciDeviceID=0x2684,VideoDriverVersion=32.0.15.8157"`. A malformed value logs an error and is ignored.
+- Not changed: the registry `DriverVersion` written by win32u (`35.0.10.1000`), which WMI reads, and dxdiag's fixed driver date.
+- Checked by `check-gpu-identity.sh` (it runs `gpu-identity.c` in a scratch prefix): 4090, 5090 and 5080 report `x.x.15.8157`, an older card keeps `13.4052`, the override works, a bad value is refused. On the stock 26.3.0-2 the same script fails (531.18, no 5090).
+- Whether this unlocks DLSS in Deadlock is **not proven**: the game decides without calling NVAPI.
+
+### Loader identity and Game Mode (0002)
+
+- `CFBundleIdentifier` `dev.bryann2k.cartouche.wineloader` (was `com.codeweavers.CrossOver.wineloader`), `CFBundleName` « Cartouche Wine ». The menu now reads « Quit Cartouche Wine ».
+- `LSApplicationCategoryType` `public.app-category.games`, `LSSupportsGameMode` (macOS 26) and `GCSupportsGameMode` (macOS 14). They make a game **eligible** for Game Mode. macOS decides, and only in full screen, so Game Mode is not guaranteed.
+- **Metal shader cache.** macOS keeps it under `$(getconf DARWIN_USER_CACHE_DIR)/<bundle id>/` (`com.apple.metal`, `com.apple.metalfe`, `com.apple.gpuarchiver`). With the new id, each game compiles its shaders once more on its first run. Copying the old folder to the new name keeps the cache: `cp -cR "$C/com.codeweavers.CrossOver.wineloader" "$C/dev.bryann2k.cartouche.wineloader"` with `C=$(getconf DARWIN_USER_CACHE_DIR)`, run once, only if the new folder does not exist yet. The runner has no first-run hook, so the launcher should do it. Whether Metal accepts the copied entries is not verified; if it does not, it just recompiles.
+- macOS may ask again for permissions it had granted to the old id (not verified).
 
 Upstream behavior that Cartouche relies on lives in CodeWeavers' sources, not here. One example: CodeWeavers' Rosetta 2 workarounds for the 32-bit syscall thunk (marked "CW HACK" in their sources). `crossover-sources-26.3.0.tar.gz` (the pinned SHA-256) carries `CW HACK 20760` in `sources/wine/dlls/wow64cpu/cpu.c`: under Rosetta 2 the 32-to-64 syscall thunk returns with `lretq`, which avoids a SIGUSR1 race ([WineHQ bug 60494](https://bugs.winehq.org/show_bug.cgi?id=60494)).
 
@@ -199,6 +228,9 @@ Branch `wine-crossover-26.3.0-3`. Not published, and not offered by the app.
 - `--without-ffmpeg`: Wine's own FFmpeg backend is not built.
 - **Boot check.** On a failed first boot it dumps the processes, their stacks and `system32`. With `BOOT_DIAG=1` it also boots the build with the macOS display driver off: when the published 26.3.0-1 hangs too and that boot works, the addons, registry and console checks run in that prefix (`result=pass mode=no-display-driver`). Diagnostic boots get 600 s, more than Wine's own 300 s wait for wineboot.
 - `pins.env`: `BUILD_REVISION=3`, `GST_VERSION`, `FFMPEG_*`, `BREW_GST_DEPS`, and `meson ninja nasm` in `BREW_BUILD_DEPS`.
+- **First source patches** (branch `feat/gpu-identity`), see [Source patches](#source-patches): GPU identity (recent NVIDIA driver for Turing and newer, RTX 50 cards, `VideoDriverVersion`), loader bundle identity « Cartouche Wine » with the Game Mode keys, and the browser names. **The new loader id moves the Metal shader cache**: every game compiles its shaders once more, unless the launcher copies the old cache folder (see [Loader identity](#loader-identity-and-game-mode-0002)).
+- **Build tooling.** `patches/series` with hashes, checked before any patch is applied. GStreamer and FFmpeg are reused when their inputs are unchanged (`work/gst.key`; `CACHE_GSTREAMER=0` rebuilds). `ccache` is used when installed (`CCACHE=0` turns it off). `JOBS` sets `make -j`.
+- Checked on 2026-10-30, not by a full build: the three patches apply to the pinned tarball with no fuzz. `wined3d.dll` (both architectures), `ieframe.dll`, `iexplore.exe` and the loader compile with llvm-mingw 20261006. The loader embeds the new plist. The full build was not run on the Mac: there is no Intel Homebrew in `/usr/local`, no Xcode 16.4, and 10 GB of free disk.
 
 Checked on Linux x86_64 before CI (not on a Mac): `build-gstreamer.sh` built all 21 plugins with meson 1.12.1 and GLib 2.80; `check-gstreamer.sh` passed on a package-like tree with no `GST_*` variable set; `filesrc ! decodebin ! videoconvert ! fakesink` reached EOS on an H.264+AAC MP4, a WMV2+WMA2 ASF and an MPEG-2 PS file. The plugins plus the GStreamer and FFmpeg libraries were about 18 MB uncompressed there.
 
