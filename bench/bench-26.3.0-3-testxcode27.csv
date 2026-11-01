@@ -1,0 +1,8 @@
+runner,metric,runs,unit,min,median,max
+wine-crossover-26.3.0-3-testxcode27,prefix_boot_ms,3,ms,20802.2,21448.8,35619.9
+wine-crossover-26.3.0-3-testxcode27,exe_start_ms,3,ms,3833.8,4036.8,4530.7
+wine-crossover-26.3.0-3-testxcode27,runner_bytes,1,B,928044022.0,928044022.0,928044022.0
+wine-crossover-26.3.0-3-testxcode27,runner_pe_bytes,1,B,772677120.0,772677120.0,772677120.0
+wine-crossover-26.3.0-3-testxcode27,runner_dwarf_bytes,1,B,0.0,0.0,0.0
+wine-crossover-26.3.0-3-testxcode27,runner_dwarf_pct,1,%,0.0,0.0,0.0
+wine-crossover-26.3.0-3-testxcode27,runner_files,1,count,4848.0,4848.0,4848.0

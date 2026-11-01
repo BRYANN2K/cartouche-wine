@@ -111,6 +111,7 @@ while read -r leaf path; do
             mkdir "$tmp/x"
             tar -xf "$src" -C "$tmp/x" -T "$tmp/wanted"
             while IFS= read -r f; do
+                [ -f "$tmp/x/$f" ] || continue
                 rel=${f#./}
                 rel=${rel#*/}
                 mkdir -p "$dest/$formula/$(dirname "$rel")"
