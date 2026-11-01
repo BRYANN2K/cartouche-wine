@@ -98,7 +98,8 @@ for f in $BREW_LINK_DEPS; do libs="$libs $(lib_of "$f")"; done
 # plugins go to lib/gstreamer-1.0, where libgstreamer looks by default (it
 # finds itself with dladdr), and gst-inspect-1.0 to libexec/gstreamer-1.0
 gst_modules="gstreamer-1.0 gstreamer-video-1.0 gstreamer-audio-1.0 gstreamer-tag-1.0"
-for l in gstreamer base video audio tag; do libs="$libs $gst/lib/libgst$l-1.0.0.dylib"; done
+libs="$libs $gst/lib/libgstreamer-1.0.0.dylib"
+for l in base video audio tag; do libs="$libs $gst/lib/libgst$l-1.0.0.dylib"; done
 places=
 for p in $(awk '!/^#/ && NF == 3 { print $3 }' "$here/gstreamer-plugins.txt"); do
     places="$places --place $deps/lib/gstreamer-1.0 @loader_path/.. $gst/lib/gstreamer-1.0/libgst$p.dylib"

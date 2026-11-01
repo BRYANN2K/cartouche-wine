@@ -786,6 +786,8 @@ class GStreamer(unittest.TestCase):
         self.assertIn(f"--place {work}/deps/libexec/gstreamer-1.0 @executable_path/../../lib "
                       f"{work}/gst/bin/gst-inspect-1.0", bundle)
         self.assertIn(f"--search {work}/gst/lib --search {work}/ffmpeg/lib", bundle)
+        self.assertIn(f"{work}/gst/lib/libgstreamer-1.0.0.dylib", bundle)
+        self.assertNotIn("libgstgstreamer", bundle)
         collect = next(line for line in out.splitlines() if "collect-licenses.sh" in line)
         self.assertIn(f"--local {work}/gst gstreamer --local {work}/ffmpeg ffmpeg", collect)
         self.assertIn("COPYING.gst-libav", out)
