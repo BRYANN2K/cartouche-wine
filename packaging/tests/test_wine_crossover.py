@@ -860,6 +860,7 @@ class Pins(unittest.TestCase):
     def test_workflow_never_builds_a_published_release_from_the_compile_cache(self):
         workflow = (ROOT / ".github/workflows/wine-crossover.yml").read_text()
         self.assertIn("WINE_CCACHE: ${{ !inputs.publish && '1' || '' }}", workflow)
+        self.assertIn("PACKAGE_XZ_PRESET: ${{ !inputs.publish && '-6' || '' }}", workflow)
         for step in re.findall(r"- name: [^\n]*(?:ccache|compile cache)[^\n]*\n(?:\s+(?!- name:)[^\n]*\n)*", workflow):
             self.assertIn("inputs.publish", step, step)
 

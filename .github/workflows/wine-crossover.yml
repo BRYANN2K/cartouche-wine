@@ -142,6 +142,7 @@ jobs:
         id: package
         env:
           REPOSITORY: ${{ github.repository }}
+          PACKAGE_XZ_PRESET: ${{ !inputs.publish && '-6' || '' }}
         run: |
           . packaging/wine-crossover/pins.env
           sh packaging/wine-crossover/package.sh work/install \
