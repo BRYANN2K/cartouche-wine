@@ -47,7 +47,7 @@ jobs:
     needs: scripts
     # Wine's Unix side is x86_64 code that Rosetta runs, so it is built on x86_64
     runs-on: ${{ vars.WINE_RUNNER || 'macos-15-intel' }}
-    timeout-minutes: 300
+    timeout-minutes: 180
     outputs:
       tag: ${{ steps.package.outputs.tag }}
     steps:

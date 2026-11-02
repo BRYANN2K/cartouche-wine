@@ -39,7 +39,7 @@ Triggers:
 - Runs `packaging/tests/test_wine_crossover.py`.
 - Runs `build.sh --dry-run`.
 
-### Job `build` (runner `vars.WINE_RUNNER`, default `macos-15-intel`; 300 minutes)
+### Job `build` (runner `vars.WINE_RUNNER`, default `macos-15-intel`; 180 minutes)
 
 The runner is x86_64 because Wine's Unix side is x86_64 code that Rosetta 2 runs.
 
