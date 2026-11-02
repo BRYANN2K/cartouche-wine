@@ -89,8 +89,50 @@ jobs:
           # shellcheck disable=SC2086
           brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS
 
+      # A published build is compiled from scratch: ccache only serves test builds.
+      # The toolchain pins name the key, as ccache cannot see llvm-mingw's real compiler.
+      - name: Install ccache
+        if: ${{ !inputs.publish }}
+        run: brew install ccache
+
+      - name: Name the compile cache
+        if: ${{ !inputs.publish }}
+        id: ccache-key
+        run: |
+          . packaging/wine-crossover/pins.env
+          echo "toolchain=$(printf '%s\n' "$XCODE_APP" "$LLVM_MINGW_VERSION" "$MACOSX_DEPLOYMENT_TARGET" | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the compile cache
+        if: ${{ !inputs.publish }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: work/ccache
+          key: wine-ccache-${{ steps.ccache-key.outputs.toolchain }}-${{ github.run_id }}
+          restore-keys: wine-ccache-${{ steps.ccache-key.outputs.toolchain }}-
+
       - name: Build
+        env:
+          WINE_CCACHE: ${{ !inputs.publish && '1' || '' }}
+          CCACHE_DIR: ${{ github.workspace }}/work/ccache
+          CCACHE_COMPILERCHECK: content
+          CCACHE_COMPILERTYPE: clang
+          CCACHE_MAXSIZE: 3G
         run: sh packaging/wine-crossover/build.sh "$PWD/work"
+
+      - name: Report the compile cache
+        if: ${{ !cancelled() && !inputs.publish }}
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/work/ccache
+        run: ccache --show-stats | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Saved even when a later check fails: that is when the next run needs it.
+      # This job never runs on pull requests.
+      - name: Save the compile cache
+        if: ${{ !cancelled() && !inputs.publish }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: work/ccache
+          key: wine-ccache-${{ steps.ccache-key.outputs.toolchain }}-${{ github.run_id }}
 
       - name: Package
         id: package

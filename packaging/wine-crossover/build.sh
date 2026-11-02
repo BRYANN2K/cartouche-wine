@@ -131,6 +131,14 @@ fi
 # lib/wine/x86_64-unix/../../ is lib/, where the bundled dylibs go
 ldflags="-L$deps/lib -Wl,-rpath,@loader_path/../../ -Wl,-headerpad_max_install_names"
 
+# WINE_CCACHE=1 compiles through ccache, with the compilers configure would pick.
+# CI sets it on builds that are not published; meson finds ccache by itself.
+if [ -n "${WINE_CCACHE:-}" ]; then
+    set -- "CC=ccache gcc" "i386_CC=ccache i686-w64-mingw32-gcc" "x86_64_CC=ccache x86_64-w64-mingw32-gcc"
+else
+    set --
+fi
+
 cd "$build" 2>/dev/null || [ -n "$dry" ]
 run "$src/sources/wine/configure" \
     --prefix="$install" \
@@ -150,7 +158,7 @@ run "$src/sources/wine/configure" \
     --without-v4l2 --without-wayland --without-x \
     "LDFLAGS=$ldflags" \
     "GSTREAMER_CFLAGS=$gst_cflags" "GSTREAMER_LIBS=$gst_libs" \
-    "CFLAGS=-O2 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
+    "CFLAGS=-O2 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" "$@"
 run make -j"$(sysctl -n hw.ncpu)"
 run make install-lib
 # configure skips winegstreamer quietly when GStreamer does not link
