@@ -863,6 +863,11 @@ class Pins(unittest.TestCase):
         for step in re.findall(r"- name: [^\n]*(?:ccache|compile cache)[^\n]*\n(?:\s+(?!- name:)[^\n]*\n)*", workflow):
             self.assertIn("inputs.publish", step, step)
 
+    def test_boot_only_runs_skip_the_build_and_cannot_publish(self):
+        workflow = (ROOT / ".github/workflows/wine-crossover.yml").read_text()
+        self.assertIn("if: github.event_name == 'workflow_dispatch' && inputs.boot_only_run == ''", workflow)
+        self.assertIn("needs: [build, boot]", workflow)
+
     def test_workflow_actions_are_pinned_by_commit_with_their_version(self):
         workflow = (ROOT / ".github/workflows/wine-crossover.yml").read_text()
         uses = [line.split("uses:", 1)[1].strip() for line in workflow.splitlines() if "uses:" in line]
