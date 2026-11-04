@@ -67,7 +67,7 @@ run tar -xJf "$ffmpeg_tar" -C "$build/ffmpeg" --strip-components 1
 if [ -n "$dry" ]; then
     echo "+ (cd $build/ffmpeg && ./configure $(echo $ff_flags))"
 else
-    (cd "$build/ffmpeg" && ./configure $ff_flags)
+    (cd "$build/ffmpeg" && ./configure $ff_flags ${WINE_CCACHE:+"--cc=ccache clang"})
     # The configured FFmpeg must not be GPL or nonfree
     grep -q '^#define CONFIG_GPL 0' "$build/ffmpeg/config.h" \
         && grep -q '^#define CONFIG_NONFREE 0' "$build/ffmpeg/config.h" \

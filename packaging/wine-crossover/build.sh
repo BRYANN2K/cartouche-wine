@@ -168,10 +168,13 @@ fi
 # lib/wine/x86_64-unix/../../ is lib/, where the bundled dylibs go
 ldflags="-L$deps/lib -Wl,-rpath,@loader_path/../../ -Wl,-headerpad_max_install_names"
 
-# ccache, when installed, for the host and both PE compilers (CCACHE=0 turns
-# it off); the build folder is emptied each time, the cache is not
-ccache=
-if [ "${CCACHE:-1}" != 0 ] && command -v ccache >/dev/null 2>&1; then ccache=1; fi
+# WINE_CCACHE=1 compiles through ccache, with the compilers configure would pick.
+# CI sets it on builds that are not published; meson finds ccache by itself.
+if [ -n "${WINE_CCACHE:-}" ]; then
+    set -- "CC=ccache gcc" "i386_CC=ccache i686-w64-mingw32-gcc" "x86_64_CC=ccache x86_64-w64-mingw32-gcc"
+else
+    set --
+fi
 
 cd "$build" 2>/dev/null || [ -n "$dry" ]
 run "$src/sources/wine/configure" \
@@ -192,8 +195,7 @@ run "$src/sources/wine/configure" \
     --without-v4l2 --without-wayland --without-x \
     "LDFLAGS=$ldflags" \
     "GSTREAMER_CFLAGS=$gst_cflags" "GSTREAMER_LIBS=$gst_libs" \
-    "CFLAGS=-O2 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
-    ${ccache:+"CC=ccache clang" "x86_64_CC=ccache x86_64-w64-mingw32-clang" "i386_CC=ccache i686-w64-mingw32-clang"}
+    "CFLAGS=-O2 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" "$@"
 # JOBS lowers the parallelism to keep the Mac usable during a local build
 run make -j"${JOBS:-$(sysctl -n hw.ncpu)}"
 run make install-lib

@@ -31,14 +31,15 @@ File: `.github/workflows/wine-crossover.yml`. It needs no secret and has `conten
 Triggers:
 
 - `pull_request` on the paths above: only the `scripts` job runs.
-- `workflow_dispatch` with the boolean input `publish` (default false): the `build` job runs, and `publish` runs if the input is true **and** the ref is the repository's default branch.
+- `workflow_dispatch` with the boolean input `publish` (default false): the `build` and `boot` jobs run, and `publish` runs if the input is true **and** the ref is the repository's default branch.
+- `workflow_dispatch` with `boot_only_run` set to a run id: `build` is skipped and `boot` tests that run's `wine-crossover` artifact with the scripts of the dispatched ref. Use it to test a `boot-check.sh` change without compiling Wine again. `publish` cannot run this way, because it needs `build`.
 
 ### Job `scripts` (macos-15)
 
 - Runs `packaging/tests/test_wine_crossover.py`.
 - Runs `build.sh --dry-run`.
 
-### Job `build` (runner `vars.WINE_RUNNER`, default `macos-15-intel`; 300 minutes)
+### Job `build` (runner `vars.WINE_RUNNER`, default `macos-15-intel`; 180 minutes)
 
 The runner is x86_64 because Wine's Unix side is x86_64 code that Rosetta 2 runs.
 
@@ -46,12 +47,15 @@ The runner is x86_64 because Wine's Unix side is x86_64 code that Rosetta 2 runs
 2. Cache `work/downloads`, keyed by the hash of `pins.env`.
 3. `fetch.sh` for the source tarball, llvm-mingw, Wine Mono, Wine Gecko, their license files, and FFmpeg.
 4. `brew install` the formulas in `pins.env` (`BREW_BUILD_DEPS`, `BREW_LINK_DEPS`, `BREW_GST_DEPS`).
-5. `build.sh work`. This builds GStreamer and FFmpeg first (`build-gstreamer.sh`), then Wine, and runs `check-deps.sh`, `check_dlopen.py`, `check-sdl.sh`, `check-licenses.sh` and `check-gstreamer.sh` on the install tree.
-6. `package.sh`: writes the archive, `.sha256`, `manifest-entry.json` and `tag` into `out/`, and copies the Homebrew source archives to `out/brew-sources/brew-<formula>-<version>.<ext>` and the FFmpeg tarball to `out/`. The entry is also written to the job summary.
+5. `build.sh work`. A run that does not publish compiles through ccache (`WINE_CCACHE=1`, cache `work/ccache`, hit rate in the job summary), and a run that publishes compiles from scratch. This builds GStreamer and FFmpeg first (`build-gstreamer.sh`), then Wine, and runs `check-deps.sh`, `check_dlopen.py`, `check-sdl.sh`, `check-licenses.sh` and `check-gstreamer.sh` on the install tree.
+6. `package.sh`: writes the archive (`xz -9e`, or `-6` when the run does not publish), `.sha256`, `manifest-entry.json` and `tag` into `out/`, and copies the Homebrew source archives to `out/brew-sources/brew-<formula>-<version>.<ext>` and the FFmpeg tarball to `out/`. The entry is also written to the job summary.
 7. `verify.sh`: re-runs the five checks on the packaged archive and runs `wine --version`. Output goes to `out/verify.txt`.
 8. `redist-scan.sh`: fails if the archive holds Apple Game Porting Toolkit files.
-9. Boot check, below.
-10. Upload `out/` as the artifact `wine-crossover` (also when a step failed).
+9. Upload `out/` as the artifact `wine-crossover` (also when a step failed).
+
+### Job `boot` (runner `vars.WINE_BOOT_RUNNER`, then `vars.WINE_RUNNER`, default `macos-15-intel`; 60 minutes)
+
+Downloads the `wine-crossover` artifact and runs the boot check below. Its logs are in the artifact `wine-crossover-boot`. A boot failure can be rerun alone with "Re-run failed jobs".
 
 ### The boot check
 

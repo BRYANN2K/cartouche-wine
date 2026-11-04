@@ -6,6 +6,7 @@
 #   ./package.sh <install folder> <source tarball> <out folder>
 #
 # REPOSITORY (owner/name) sets the download URL, GITHUB_SHA the recorded commit.
+# PACKAGE_XZ_PRESET overrides -9e, for builds that are not published.
 set -eu
 
 here="$(cd "$(dirname "$0")" && pwd -P)"
@@ -107,7 +108,7 @@ EOF
 
 # Owner and order do not depend on the build machine
 (cd "$stage" && find "$name" -print | LC_ALL=C sort > "$stage/files" \
-    && tar --uid 0 --gid 0 --uname root --gname wheel -cf - -n -T "$stage/files" | xz -9e -T0 > "$out/$asset")
+    && tar --uid 0 --gid 0 --uname root --gname wheel -cf - -n -T "$stage/files" | xz "${PACKAGE_XZ_PRESET:--9e}" -T0 > "$out/$asset")
 
 (cd "$out" && shasum -a 256 "$asset" > "$asset.sha256")
 python3 "$here/manifest_entry.py" "$out/$asset" \

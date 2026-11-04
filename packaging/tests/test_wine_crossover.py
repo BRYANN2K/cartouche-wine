@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -243,6 +244,18 @@ class WineCrossOverScripts(unittest.TestCase):
         r = run("sh", SCRIPTS / "check-deps.sh", bundled)
         self.assertEqual(r.returncode, 0, r.stderr)
 
+    def test_ccache_is_opt_in_and_keeps_the_compilers_configure_picks(self):
+        plain = run("sh", SCRIPTS / "build.sh", "--dry-run", self.work / "plain")
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        self.assertNotIn("ccache", plain.stdout)
+        env = dict(os.environ, WINE_CCACHE="1")
+        cached = run("sh", SCRIPTS / "build.sh", "--dry-run", self.work / "cached", env=env)
+        self.assertEqual(cached.returncode, 0, cached.stderr)
+        configure = next(line for line in cached.stdout.splitlines() if "sources/wine/configure" in line)
+        for var in ("CC=ccache gcc", "i386_CC=ccache i686-w64-mingw32-gcc",
+                     "x86_64_CC=ccache x86_64-w64-mingw32-gcc"):
+            self.assertIn(var, configure)
+
     def test_dry_run_prints_the_pinned_configure_and_touches_nothing(self):
         work = self.work / "dry"
         r = run("sh", SCRIPTS / "build.sh", "--dry-run", work)
@@ -295,15 +308,15 @@ class WineCrossOverScripts(unittest.TestCase):
     def test_ccache_and_jobs_reach_configure_and_make(self):
         bin_dir = self.work / "bin"
         write(bin_dir / "ccache", "#!/bin/sh\nexec \"$@\"\n", 0o755)
-        env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", JOBS="3")
+        env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", JOBS="3", WINE_CCACHE="1")
         r = run("sh", SCRIPTS / "build.sh", "--dry-run", self.work / "dry", env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
         configure = next(line for line in r.stdout.splitlines() if "sources/wine/configure" in line)
-        for var in ("CC=ccache clang", "x86_64_CC=ccache x86_64-w64-mingw32-clang",
-                    "i386_CC=ccache i686-w64-mingw32-clang"):
+        for var in ("CC=ccache gcc", "x86_64_CC=ccache x86_64-w64-mingw32-gcc",
+                    "i386_CC=ccache i686-w64-mingw32-gcc"):
             self.assertIn(var, configure)
         self.assertIn("+ make -j3", r.stdout)
-        r = run("sh", SCRIPTS / "build.sh", "--dry-run", self.work / "dry", env=dict(env, CCACHE="0"))
+        r = run("sh", SCRIPTS / "build.sh", "--dry-run", self.work / "dry", env=dict(env, WINE_CCACHE=""))
         self.assertNotIn("ccache", r.stdout)
 
 
@@ -935,12 +948,24 @@ class Pins(unittest.TestCase):
         self.assertTrue(pins["WINE_GECKO_X86_64_URL"].endswith(f"/{gecko}/wine-gecko-{gecko}-x86_64.tar.xz"))
         self.assertTrue(pins["CX_SOURCE_URL"].endswith(f"crossover-sources-{pins['CX_VERSION']}.tar.gz"))
 
+    def test_workflow_never_builds_a_published_release_from_the_compile_cache(self):
+        workflow = (ROOT / ".github/workflows/wine-crossover.yml").read_text()
+        self.assertIn("WINE_CCACHE: ${{ !inputs.publish && '1' || '' }}", workflow)
+        self.assertIn("PACKAGE_XZ_PRESET: ${{ !inputs.publish && '-6' || '' }}", workflow)
+        for step in re.findall(r"- name: [^\n]*(?:ccache|compile cache)[^\n]*\n(?:\s+(?!- name:)[^\n]*\n)*", workflow):
+            self.assertIn("inputs.publish", step, step)
+
+    def test_boot_only_runs_skip_the_build_and_cannot_publish(self):
+        workflow = (ROOT / ".github/workflows/wine-crossover.yml").read_text()
+        self.assertIn("if: github.event_name == 'workflow_dispatch' && inputs.boot_only_run == ''", workflow)
+        self.assertIn("needs: [build, boot]", workflow)
+
     def test_workflow_actions_are_pinned_by_commit_with_their_version(self):
         workflow = (ROOT / ".github/workflows/wine-crossover.yml").read_text()
         uses = [line.split("uses:", 1)[1].strip() for line in workflow.splitlines() if "uses:" in line]
         self.assertTrue(uses)
         for use in uses:
-            self.assertRegex(use, r"^actions/[a-z-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$")
+            self.assertRegex(use, r"^actions/[a-z-]+(/[a-z-]+)?@[0-9a-f]{40} # v\d+\.\d+\.\d+$")
 
 
 if __name__ == "__main__":

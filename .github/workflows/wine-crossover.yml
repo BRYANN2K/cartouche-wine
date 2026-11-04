@@ -11,6 +11,10 @@ on:
         description: Publish the build as a release (from the default branch only)
         type: boolean
         default: false
+      boot_only_run:
+        description: Skip the build and boot the wine-crossover artifact of this run id. Nothing is published.
+        type: string
+        default: ""
   pull_request:
     paths:
       - packaging/wine-crossover/**
@@ -39,11 +43,11 @@ jobs:
 
   build:
     name: build Cartouche Wine
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && inputs.boot_only_run == ''
     needs: scripts
     # Wine's Unix side is x86_64 code that Rosetta runs, so it is built on x86_64
     runs-on: ${{ vars.WINE_RUNNER || 'macos-15-intel' }}
-    timeout-minutes: 300
+    timeout-minutes: 180
     outputs:
       tag: ${{ steps.package.outputs.tag }}
     steps:
@@ -89,13 +93,56 @@ jobs:
           # shellcheck disable=SC2086
           brew install $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS
 
+      # A published build is compiled from scratch: ccache only serves test builds.
+      # The toolchain pins name the key, as ccache cannot see llvm-mingw's real compiler.
+      - name: Install ccache
+        if: ${{ !inputs.publish }}
+        run: brew install ccache
+
+      - name: Name the compile cache
+        if: ${{ !inputs.publish }}
+        id: ccache-key
+        run: |
+          . packaging/wine-crossover/pins.env
+          echo "toolchain=$(printf '%s\n' "$XCODE_APP" "$LLVM_MINGW_VERSION" "$MACOSX_DEPLOYMENT_TARGET" | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the compile cache
+        if: ${{ !inputs.publish }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: work/ccache
+          key: wine-ccache-${{ steps.ccache-key.outputs.toolchain }}-${{ github.run_id }}
+          restore-keys: wine-ccache-${{ steps.ccache-key.outputs.toolchain }}-
+
       - name: Build
+        env:
+          WINE_CCACHE: ${{ !inputs.publish && '1' || '' }}
+          CCACHE_DIR: ${{ github.workspace }}/work/ccache
+          CCACHE_COMPILERCHECK: content
+          CCACHE_COMPILERTYPE: clang
+          CCACHE_MAXSIZE: 3G
         run: sh packaging/wine-crossover/build.sh "$PWD/work"
+
+      - name: Report the compile cache
+        if: ${{ !cancelled() && !inputs.publish }}
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/work/ccache
+        run: ccache --show-stats | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Saved even when a later check fails: that is when the next run needs it.
+      # This job never runs on pull requests.
+      - name: Save the compile cache
+        if: ${{ !cancelled() && !inputs.publish }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: work/ccache
+          key: wine-ccache-${{ steps.ccache-key.outputs.toolchain }}-${{ github.run_id }}
 
       - name: Package
         id: package
         env:
           REPOSITORY: ${{ github.repository }}
+          PACKAGE_XZ_PRESET: ${{ !inputs.publish && '-6' || '' }}
         run: |
           . packaging/wine-crossover/pins.env
           sh packaging/wine-crossover/package.sh work/install \
@@ -114,15 +161,6 @@ jobs:
       - name: Scan the archive for Game Porting Toolkit files
         run: sh packaging/redist-scan.sh out/*-x86_64.tar.xz
 
-      # Times winecfg's window only when the runner has a GUI session; its logs
-      # are in the wine-crossover artifact (boot/)
-      - name: Initialize a fresh prefix, run console programs and boot winecfg
-        run: |
-          mkdir -p "$RUNNER_TEMP/runner"
-          tar -xJf out/*-x86_64.tar.xz -C "$RUNNER_TEMP/runner"
-          launchctl managername || true
-          BOOT_DIAG=1 sh packaging/wine-crossover/boot-check.sh "$RUNNER_TEMP/runner/$(cat out/tag)" out/boot 180
-
       - name: Keep the build
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -131,9 +169,48 @@ jobs:
           path: out/
           if-no-files-found: ignore
 
+  # Its own job, so a boot failure reruns alone ("Re-run failed jobs") and a change
+  # to boot-check.sh is tested with boot_only_run, without compiling Wine again
+  boot:
+    name: boot Cartouche Wine
+    needs: [scripts, build]
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' && needs.scripts.result == 'success'
+      && (needs.build.result == 'success' || (needs.build.result == 'skipped' && inputs.boot_only_run != ''))
+    runs-on: ${{ vars.WINE_BOOT_RUNNER || vars.WINE_RUNNER || 'macos-15-intel' }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wine-crossover
+          path: out
+          run-id: ${{ inputs.boot_only_run || github.run_id }}
+          github-token: ${{ github.token }}
+
+      # Times winecfg's window only when the runner has a GUI session
+      - name: Initialize a fresh prefix, run console programs and boot winecfg
+        run: |
+          mkdir -p "$RUNNER_TEMP/runner"
+          tar -xJf out/*-x86_64.tar.xz -C "$RUNNER_TEMP/runner"
+          launchctl managername || true
+          BOOT_DIAG=1 sh packaging/wine-crossover/boot-check.sh "$RUNNER_TEMP/runner/$(cat out/tag)" out/boot 180
+
+      - name: Keep the boot logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wine-crossover-boot
+          path: out/boot/
+          if-no-files-found: ignore
+
   publish:
     name: publish the release
-    needs: build
+    needs: [build, boot]
     if: inputs.publish && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     permissions:
