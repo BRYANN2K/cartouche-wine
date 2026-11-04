@@ -8,8 +8,8 @@ This document is for users, packagers and anyone checking that Cartouche Wine me
 | --- | --- | --- |
 | Wine, as in CodeWeavers' CrossOver 26.3 sources | GNU Lesser General Public License, version 2.1 or later | `COPYING.LIB`, `LICENSE`, `AUTHORS` at the top of the archive |
 | Bundled libraries (FreeType, GnuTLS, MoltenVK, SDL2, SDL3, GLib and their dependencies) | Each has its own | `share/licenses/<package>/` |
-| GStreamer 1.24.4 libraries, plugins (`lib/gstreamer-1.0`) and `gst-inspect-1.0` (from 26.3.0-3) | LGPL 2.1 or later; built with `-Dgpl=disabled`, only LGPL plugins (`mpegpsdemux` is MPL-1.1/LGPL dual-licensed) | `share/licenses/gstreamer/` |
-| FFmpeg 6.1.6 (from 26.3.0-3) | LGPL 2.1 or later: configured without `--enable-gpl`, `--enable-version3` or `--enable-nonfree`, decoders only | `share/licenses/ffmpeg/` |
+| GStreamer 1.24.4 libraries, plugins (`lib/gstreamer-1.0`) and `gst-inspect-1.0` (from 26.3.1) | LGPL 2.1 or later; built with `-Dgpl=disabled`, only LGPL plugins (`mpegpsdemux` is MPL-1.1/LGPL dual-licensed) | `share/licenses/gstreamer/` |
+| FFmpeg 6.1.6 (from 26.3.1) | LGPL 2.1 or later: configured without `--enable-gpl`, `--enable-version3` or `--enable-nonfree`, decoders only | `share/licenses/ffmpeg/` |
 | Wine Mono | Its own licenses (`COPYING` of the tagged source) | `share/licenses/wine-mono/` |
 | Wine Gecko | Its own licenses (`LICENSE`, `license.html`) | `share/licenses/wine-gecko/` |
 | The build scripts in this repository | Not decided | <!-- TODO verify: no LICENSE file in the repository --> |
@@ -20,16 +20,16 @@ License files come from the Homebrew keg and from the formula's source archive, 
 
 ## The source offer
 
-The LGPL requires that anyone who gets the binaries can get the source and rebuild them. The release workflow provides the assets below. The 26.3.0-2 release attaches the Wine and Homebrew sources; 26.3.0-1 attached only its runtime and checksum. The GStreamer and FFmpeg additions are part of the unreleased 26.3.0-3 recipe:
+The LGPL requires that anyone who gets the binaries can get the source and rebuild them. The release workflow provides the assets below. The 26.3.0-2 release attaches the Wine and Homebrew sources; 26.3.0-1 attached only its runtime and checksum. The GStreamer and FFmpeg additions are part of the unreleased 26.3.1 recipe:
 
 1. **CodeWeavers' source tarball**, `crossover-sources-<version>.tar.gz`, attached to the same release as the archive. It is the file the build downloaded. Its URL and SHA-256 are in `SOURCE.md` and `pins.env`.
 2. **The source archives of the bundled Homebrew libraries**, attached as `brew-<formula>-<version>.<ext>`.
-3. **GStreamer and FFmpeg** (from 26.3.0-3). GStreamer is built from `sources/gstreamer` inside CodeWeavers' tarball (item 1). FFmpeg's release tarball is attached as `ffmpeg-<version>.tar.xz`; its URL and SHA-256 are in `SOURCE.md` and `pins.env`.
+3. **GStreamer and FFmpeg** (from 26.3.1). GStreamer is built from `sources/gstreamer` inside CodeWeavers' tarball (item 1). FFmpeg's release tarball is attached as `ffmpeg-<version>.tar.xz`; its URL and SHA-256 are in `SOURCE.md` and `pins.env`.
 4. **The build scripts**, in this repository. `SOURCE.md` links to `packaging/wine-crossover` at the exact commit.
 
 `SOURCE.md` is inside the archive and is also the release description. It names the toolchain: Xcode, llvm-mingw, the deployment target, the Homebrew formulas (versions in `BUILDINFO.txt`).
 
-Up to 26.3.0-2 we added no source patches to Wine. From 26.3.0-3 the patches are in `packaging/wine-crossover/patches/`, listed with their hashes in `patches/series` and in `SOURCE.md`, and each modified file says that it was modified and when ([CHANGES.md](CHANGES.md#source-patches)). The tarball and the scripts at the commit named in `SOURCE.md` are therefore the complete corresponding source for Wine. Wine Mono and Wine Gecko are bundled as the binary tarballs published by WineHQ. Their sources are at the tags named in `pins.env`. <!-- TODO verify: whether Mono and Gecko source needs to be attached to the release as well -->
+Up to 26.3.0-2 we added no source patches to Wine. From 26.3.1 the patches are in `packaging/wine-crossover/patches/`, listed with their hashes in `patches/series` and in `SOURCE.md`, and each modified file says that it was modified and when ([CHANGES.md](CHANGES.md#source-patches)). The tarball and the scripts at the commit named in `SOURCE.md` are therefore the complete corresponding source for Wine. Wine Mono and Wine Gecko are bundled as the binary tarballs published by WineHQ. Their sources are at the tags named in `pins.env`. <!-- TODO verify: whether Mono and Gecko source needs to be attached to the release as well -->
 
 ## Rebuilding
 
@@ -39,7 +39,7 @@ You may replace a bundled LGPL library with your own build. The libraries are se
 
 ## Patents
 
-26.3.0-3 includes decoders for H.264, AAC, WMV/VC-1 and WMA, the same set as other free Wine builds for macOS. HEVC and E-AC-3 decoders are left out on purpose, and no encoder, x264, x265 or openh264 is built. This has had no legal review.
+26.3.1 includes decoders for H.264, AAC, WMV/VC-1 and WMA, the same set as other free Wine builds for macOS. HEVC and E-AC-3 decoders are left out on purpose, and no encoder, x264, x265 or openh264 is built. This has had no legal review.
 
 ## What is never shipped
 

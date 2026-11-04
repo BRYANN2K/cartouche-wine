@@ -20,7 +20,7 @@ with the libraries needed by the Cartouche launcher bundled alongside it.
 
 Cartouche Wine is the Windows compatibility runtime used by **Cartouche**, a macOS game launcher. This repository contains the recipes, checks and workflows that build that runtime. It does not contain the launcher or a copy of the Wine source tree.
 
-The recipe downloads CodeWeavers’ published CrossOver source archive, verifies its checksum and builds Wine with a few documented source patches (from 26.3.0-3: GPU identity, the loader's name, the browser's name; see [CHANGES.md](docs/CHANGES.md#source-patches)). It packages the result with its dependencies so users do not need Homebrew.
+The recipe downloads CodeWeavers’ published CrossOver source archive, verifies its checksum and builds Wine with a few documented source patches (from 26.3.1: GPU identity, the loader's name, the browser's name, the in-game menu focus; see [CHANGES.md](docs/CHANGES.md#source-patches)). It packages the result with its dependencies so users do not need Homebrew.
 
 | Project | Its role |
 | --- | --- |
@@ -36,7 +36,7 @@ Cartouche Wine is maintained independently of CodeWeavers and WineHQ. For commer
 | --- | --- | --- |
 | [26.3.0-2](https://github.com/BRYANN2K/cartouche-wine/releases/tag/wine-crossover-26.3.0-2) | Published prerelease | SDL3 for controllers, bundled Mono and Gecko, dependency and license checks. |
 | [26.3.0-1](https://github.com/BRYANN2K/cartouche-wine/releases/tag/wine-crossover-26.3.0-1) | Previous release | First packaged build. |
-| **26.3.0-3** | In development on `main` | GStreamer and FFmpeg for game video playback. Full macOS build and game validation remain pending. |
+| **26.3.1** | In development on `main` | GStreamer and FFmpeg for game video playback. Full macOS build and game validation remain pending. |
 
 A published archive is not a guarantee that every game works. New builds enter Cartouche’s update manifest only after a separate promotion step requiring a real Mac boot and controller test. See [release checks and known CI limits](docs/RELEASING.md).
 
@@ -84,7 +84,7 @@ The first prefix initialization can take several minutes under Rosetta. Wait for
 - **Wine Mono 10.4.1 and Wine Gecko 2.47.4**, available locally during prefix setup.
 - Dependency licenses, source information and a build record.
 
-The development recipe for **26.3.0-3** also builds GStreamer 1.24.4 and FFmpeg 6.1.6. These are **not included in 26.3.0-2**. See the [GStreamer implementation and pending validation](docs/CHANGES.md#gstreamer-from-2630-3).
+The development recipe for **26.3.1** also builds GStreamer 1.24.4 and FFmpeg 6.1.6. These are **not included in 26.3.0-2**. See the [GStreamer implementation and pending validation](docs/CHANGES.md#gstreamer-from-2631).
 
 Apple’s Game Porting Toolkit and D3DMetal are not bundled. The recipe includes a redistribution scan to keep them out of release archives.
 
