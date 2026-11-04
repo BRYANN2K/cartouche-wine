@@ -56,6 +56,8 @@ if [ "$so" = dylib ]; then
     # /usr/bin/clang, Apple's shim: build.sh puts llvm-mingw first in PATH, and neither its clang nor the
     # toolchain's clang called by path gets the macOS SDK (« ld: library 'System' not found »)
     host_cc=/usr/bin/clang
+    # meson (GStreamer) would take the same clang from PATH
+    export CC=/usr/bin/clang CXX=/usr/bin/clang++ OBJC=/usr/bin/clang OBJCXX=/usr/bin/clang++
     # Room for bundle-deps.sh to rewrite the install names
     ff_flags="$ff_flags --cc=$host_cc --arch=x86_64 --extra-ldflags=-Wl,-headerpad_max_install_names"
     [ -z "${MACOSX_DEPLOYMENT_TARGET:-}" ] \
