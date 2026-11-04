@@ -110,28 +110,28 @@ class WineCrossOverScripts(unittest.TestCase):
 
     def test_package_has_the_notices_source_offer_and_a_matching_entry(self):
         out = self.package()
-        asset = out / "wine-crossover-26.3.0-3-x86_64.tar.xz"
+        asset = out / "wine-crossover-26.3.1-x86_64.tar.xz"
         self.assertTrue(asset.is_file())
-        self.assertEqual((out / "tag").read_text().strip(), "wine-crossover-26.3.0-3")
+        self.assertEqual((out / "tag").read_text().strip(), "wine-crossover-26.3.1")
         self.assertEqual((out / f"{asset.name}.sha256").read_text().split()[0], sha256(asset))
 
         listing = run("tar", "-tJf", asset, check=True).stdout.split()
-        self.assertTrue(all(p.startswith("wine-crossover-26.3.0-3") for p in listing))
+        self.assertTrue(all(p.startswith("wine-crossover-26.3.1") for p in listing))
         for f in ("LICENSE", "COPYING.LIB", "AUTHORS", "SOURCE.md", "BUILDINFO.txt", "bin/wine",
                   "lib/wine/x86_64-unix/wine", "lib/wine/i386-windows/ntdll.dll",
                   "lib/gstreamer-1.0/libgstlibav.dylib", "libexec/gstreamer-1.0/gst-inspect-1.0"):
-            self.assertIn(f"wine-crossover-26.3.0-3/{f}", listing)
-        offer = run("tar", "-xJOf", asset, "wine-crossover-26.3.0-3/SOURCE.md", check=True).stdout
+            self.assertIn(f"wine-crossover-26.3.1/{f}", listing)
+        offer = run("tar", "-xJOf", asset, "wine-crossover-26.3.1/SOURCE.md", check=True).stdout
         self.assertIn("https://media.codeweavers.com/pub/crossover/source/crossover-sources-26.3.0.tar.gz", offer)
-        self.assertIn("https://github.com/owner/repo/releases/tag/wine-crossover-26.3.0-3", offer)
+        self.assertIn("https://github.com/owner/repo/releases/tag/wine-crossover-26.3.1", offer)
         self.assertIn("tree/abc123/packaging/wine-crossover", offer)
         self.assertIn("GNU Lesser General Public", offer)
-        self.assertIn("Cartouche Wine 26.3.0-3: Wine built from CodeWeavers'", offer)
+        self.assertIn("Cartouche Wine 26.3.1: Wine built from CodeWeavers'", offer)
         self.assertIn("GStreamer 1.24.4", offer)
         self.assertIn("https://ffmpeg.org/releases/ffmpeg-6.1.6.tar.xz", offer)
         self.assertIn("ffmpeg-6.1.6.tar.xz", offer)
         self.assertIn("GST_REGISTRY_1_0", offer)
-        info = run("tar", "-xJOf", asset, "wine-crossover-26.3.0-3/BUILDINFO.txt", check=True).stdout
+        info = run("tar", "-xJOf", asset, "wine-crossover-26.3.1/BUILDINFO.txt", check=True).stdout
         self.assertIn("gstreamer=1.24.4", info)
         for name, digest in series():
             self.assertIn(f"  - {name} (SHA-256 {digest})", offer)
@@ -140,12 +140,12 @@ class WineCrossOverScripts(unittest.TestCase):
 
         entry = json.loads((out / "manifest-entry.json").read_text())
         self.assertEqual(entry, {
-            "id": "wine-crossover-26.3.0-3", "kind": "wineBuild", "origin": "cartouche",
-            "name": "Cartouche Wine", "version": "26.3.0", "displayVersion": "26.3",
-            "url": "https://github.com/owner/repo/releases/download/wine-crossover-26.3.0-3/"
-                   "wine-crossover-26.3.0-3-x86_64.tar.xz",
+            "id": "wine-crossover-26.3.1", "kind": "wineBuild", "origin": "cartouche",
+            "name": "Cartouche Wine", "version": "26.3.1", "displayVersion": "26.3.1",
+            "url": "https://github.com/owner/repo/releases/download/wine-crossover-26.3.1/"
+                   "wine-crossover-26.3.1-x86_64.tar.xz",
             "size": asset.stat().st_size, "sha256": sha256(asset),
-            "root": "wine-crossover-26.3.0-3", "loader": "bin/wine", "flavors": ["rosetta"],
+            "root": "wine-crossover-26.3.1", "loader": "bin/wine", "flavors": ["rosetta"],
         })
 
     def test_package_refuses_sources_that_are_not_the_pinned_tarball(self):
@@ -159,7 +159,7 @@ class WineCrossOverScripts(unittest.TestCase):
 
     def test_verify_runs_wine_from_the_archive(self):
         out = self.package()
-        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.0-3-x86_64.tar.xz")
+        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.1-x86_64.tar.xz")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.strip().splitlines()[-1], "wine-11.0 (fake)")
 
@@ -171,7 +171,7 @@ class WineCrossOverScripts(unittest.TestCase):
         env = dict(os.environ, PINS_FILE=str(pins))
         r = run("sh", SCRIPTS / "package.sh", install, tarball, out, env=env)
         self.assertEqual(r.returncode, 0, r.stderr)
-        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.0-3-x86_64.tar.xz", env=env)
+        r = run("sh", SCRIPTS / "verify.sh", out / "wine-crossover-26.3.1-x86_64.tar.xz", env=env)
         self.assertEqual(r.returncode, 1)
         self.assertIn("share/wine/gecko/wine-gecko-2.47.4-x86_64/xul.dll is missing", r.stderr)
 
@@ -184,7 +184,7 @@ class WineCrossOverScripts(unittest.TestCase):
 
     def test_verify_refuses_an_archive_that_does_not_match_its_hash(self):
         out = self.package()
-        asset = out / "wine-crossover-26.3.0-3-x86_64.tar.xz"
+        asset = out / "wine-crossover-26.3.1-x86_64.tar.xz"
         (out / f"{asset.name}.sha256").write_text(f"{'0' * 64}  {asset.name}\n")
         r = run("sh", SCRIPTS / "verify.sh", asset)
         self.assertEqual(r.returncode, 1)
@@ -903,12 +903,12 @@ class ManifestEntry(unittest.TestCase):
     def test_the_display_name_is_cartouche_wine_and_the_id_stays(self):
         with tempfile.NamedTemporaryFile(suffix=".tar.xz") as f:
             name = pathlib.Path(f.name).name
-            r = run(sys.executable, SCRIPTS / "manifest_entry.py", f.name, "--id", "wine-crossover-26.3.0-3",
-                    "--url", f"https://h/{name}", "--root", "wine-crossover-26.3.0-3",
+            r = run(sys.executable, SCRIPTS / "manifest_entry.py", f.name, "--id", "wine-crossover-26.3.1",
+                    "--url", f"https://h/{name}", "--root", "wine-crossover-26.3.1",
                     "--version", "26.3.0", "--display-version", "26.3", check=True)
             entry = json.loads(r.stdout)
             self.assertEqual(entry["name"], "Cartouche Wine")
-            self.assertEqual(entry["id"], "wine-crossover-26.3.0-3")
+            self.assertEqual(entry["id"], "wine-crossover-26.3.1")
 
 
 class Pins(unittest.TestCase):

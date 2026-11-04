@@ -159,13 +159,13 @@ jobs:
         run: |
           . packaging/wine-crossover/pins.env
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::$TAG is already released; bump BUILD_REVISION in pins.env"
+            echo "::error::$TAG is already released; bump CARTOUCHE_WINE_VERSION in pins.env"
             exit 1
           fi
           tar -xJOf out/"$TAG"-x86_64.tar.xz "$TAG/SOURCE.md" > out/SOURCE.md
           # A prerelease is never "latest", so the app's Sparkle feed is unaffected
           gh release create "$TAG" --prerelease --latest=false \
-            --title "Cartouche Wine $CX_VERSION-$BUILD_REVISION" --notes-file out/SOURCE.md \
+            --title "Cartouche Wine $CARTOUCHE_WINE_VERSION" --notes-file out/SOURCE.md \
             out/"$TAG"-x86_64.tar.xz out/"$TAG"-x86_64.tar.xz.sha256 out/manifest-entry.json \
             out/SOURCE.md "out/crossover-sources-$CX_VERSION.tar.gz" "out/ffmpeg-$FFMPEG_VERSION.tar.xz" \
             out/brew-sources/*

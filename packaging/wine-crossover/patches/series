@@ -3,3 +3,4 @@
 5361f89cb467eb618a860e44ef54d782ec023b580bdd8cf1d9257a5df9f43a02  0001-wined3d-gpu-identity.patch
 f787eb9bd9020860a02aca7fdf0e1fe5a6a19c11de5bffd06c7bba1d7de5eeca  0002-loader-cartouche-identity-game-mode.patch
 97a18e7145c62845c5e37a5b5fedef7d4fdfe5ce2db2546ff10fcb0638aad42a  0003-cartouche-visible-names.patch
+8fed0b79b503ebf00bf0376faf47bdfbcffc92187a6b6ffc25e521dfa7b970a6  0004-winemac-cartouche-overlay-focus.patch

@@ -21,10 +21,10 @@ sh "$here/check-licenses.sh" "$install"
 [ "$(shasum -a 256 "$source_tar" | cut -d' ' -f1)" = "$CX_SOURCE_SHA256" ] \
     || { echo "package.sh: $source_tar is not the pinned source tarball" >&2; exit 1; }
 
-name="wine-crossover-$CX_VERSION-$BUILD_REVISION"
+name="wine-crossover-$CARTOUCHE_WINE_VERSION"
 tag=$name
 asset="$name-x86_64.tar.xz"
-display=$(echo "$CX_VERSION" | sed -E 's/^([0-9]+\.[0-9]+)\.0$/\1/')
+display=$CARTOUCHE_WINE_VERSION
 
 # Our source patches in the order build.sh applies them, with their hashes,
 # for SOURCE.md and BUILDINFO.txt
@@ -50,7 +50,7 @@ rm -rf "$stage/sources"
 cat > "$root/SOURCE.md" <<EOF
 # Source code for this build
 
-This is Cartouche Wine $CX_VERSION-$BUILD_REVISION: Wine built from CodeWeavers'
+This is Cartouche Wine $CARTOUCHE_WINE_VERSION: Wine built from CodeWeavers'
 CrossOver $CX_VERSION sources (LGPL) by Cartouche. It is free software under
 the GNU Lesser General Public License, version 2.1 or later (COPYING.LIB,
 LICENSE, AUTHORS). The libraries bundled with it (lib/*.dylib), the GStreamer
@@ -92,7 +92,7 @@ EOF
 
 {
     echo "cx_version=$CX_VERSION"
-    echo "build_revision=$BUILD_REVISION"
+    echo "cartouche_wine_version=$CARTOUCHE_WINE_VERSION"
     echo "commit=$commit"
     echo "llvm_mingw=$LLVM_MINGW_VERSION"
     echo "gstreamer=$GST_VERSION"
@@ -112,6 +112,6 @@ EOF
 (cd "$out" && shasum -a 256 "$asset" > "$asset.sha256")
 python3 "$here/manifest_entry.py" "$out/$asset" \
     --id "$name" --url "https://github.com/$repository/releases/download/$tag/$asset" \
-    --root "$name" --version "$CX_VERSION" --display-version "$display" > "$out/manifest-entry.json"
+    --root "$name" --version "$CARTOUCHE_WINE_VERSION" --display-version "$display" > "$out/manifest-entry.json"
 echo "$tag" > "$out/tag"
 echo "==> package: $out/$asset ($(wc -c < "$out/$asset" | tr -d ' ') bytes)"

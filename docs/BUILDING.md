@@ -25,7 +25,7 @@ The deployment target is macOS 15.0 (`MACOSX_DEPLOYMENT_TARGET` in `pins.env`).
 | --- | --- | --- |
 | `CX_VERSION` | `26.3.0` | CodeWeavers' CrossOver source version. |
 | `CX_SOURCE_URL`, `CX_SOURCE_SHA256` | see file | The LGPL tarball from CodeWeavers (149054023 bytes, Wine 11.0 inside). |
-| `BUILD_REVISION` | `3` | Bumped when the same sources are built again with a changed script or toolchain. |
+| `CARTOUCHE_WINE_VERSION` | `26.3.1` | Cartouche Wine's own version: the release tag, the runner ID and the name in the app. Raised with every release. |
 | `LLVM_MINGW_VERSION` and hash | `20261006` | Cross compiler for the PE side. |
 | `XCODE_APP`, `MACOSX_DEPLOYMENT_TARGET` | Xcode 16.4, 15.0 | Toolchain. |
 | `BREW_BUILD_DEPS`, `BREW_LINK_DEPS`, `BREW_GST_DEPS` | see above | Homebrew formulas. Versions are whatever Homebrew has. They are recorded in `BUILDINFO.txt`. |
@@ -33,7 +33,7 @@ The deployment target is macOS 15.0 (`MACOSX_DEPLOYMENT_TARGET` in `pins.env`).
 | `FFMPEG_VERSION`, `FFMPEG_URL`, `FFMPEG_SHA256` | `6.1.6` | FFmpeg for gst-libav, checked against the FFmpeg release key when pinned. |
 | `WINE_MONO_*`, `WINE_GECKO_*` | 10.4.1, 2.47.4 | Addons and their license files, with hashes. |
 
-A new CodeWeavers tarball means a new `CX_VERSION`, its SHA-256, and `BUILD_REVISION` back to 1.
+A new CodeWeavers tarball means a new `CX_VERSION` and its SHA-256, and a new `CARTOUCHE_WINE_VERSION`.
 
 ## Steps
 

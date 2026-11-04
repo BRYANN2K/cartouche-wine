@@ -5,7 +5,7 @@ This document is for maintainers. It covers how CI builds, checks and publishes 
 ## The flow
 
 ```text
-1. bump pins.env (BUILD_REVISION, or CX_VERSION for new sources), merge to the default branch
+1. bump `CARTOUCHE_WINE_VERSION` in pins.env (and CX_VERSION for new sources), merge to the default branch
 2. run workflow "wine-crossover" with publish=true   -> prerelease wine-crossover-<ver>-<rev>
 3. test the archive on a real Mac                    -> boot a fresh prefix, controller test
 4. run workflow "runner-manifest" (build_id, confirm_tested)
@@ -17,8 +17,8 @@ Nothing reaches the app until step 4. A prerelease is never "latest".
 
 ## 1. Prepare
 
-- A script, library or toolchain change with the same sources: raise `BUILD_REVISION` in `packaging/wine-crossover/pins.env`.
-- New CodeWeavers tarball: change `CX_VERSION`, `CX_SOURCE_URL`, `CX_SOURCE_SHA256`, `CX_SOURCE_SIZE`, and set `BUILD_REVISION=1`.
+- Every release raises `CARTOUCHE_WINE_VERSION` in `packaging/wine-crossover/pins.env`: Cartouche Wine has its own version, apart from the CrossOver sources it is built from. 26.3.0-1 and 26.3.0-2 followed the sources; 26.3.1 is the first of our own numbers.
+- New CodeWeavers tarball: change `CX_VERSION`, `CX_SOURCE_URL`, `CX_SOURCE_SHA256`, `CX_SOURCE_SIZE`, and raise `CARTOUCHE_WINE_VERSION`.
 - Update [CHANGES.md](CHANGES.md).
 - A pull request that touches `packaging/wine-crossover/**`, `packaging/tests/test_wine_crossover.py` or the workflow runs the `scripts` job (see below).
 

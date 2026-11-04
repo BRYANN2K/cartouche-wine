@@ -4,7 +4,7 @@ This document is for people who want to know exactly what Cartouche Wine changes
 
 ## Source patches
 
-Up to 26.3.0-2: **none**. From 26.3.0-3, `build.sh` unpacks `crossover-sources-26.3.0.tar.gz` (SHA-256 `ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872`, unchanged) and applies the patches in `packaging/wine-crossover/patches/` to `sources/wine`, in the order of `patches/series`. Anyone can rebuild the binaries from CodeWeavers' tarball and the scripts in this repository.
+Up to 26.3.0-2: **none**. From 26.3.1, `build.sh` unpacks `crossover-sources-26.3.0.tar.gz` (SHA-256 `ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872`, unchanged) and applies the patches in `packaging/wine-crossover/patches/` to `sources/wine`, in the order of `patches/series`. Anyone can rebuild the binaries from CodeWeavers' tarball and the scripts in this repository.
 
 How they are applied:
 
@@ -18,6 +18,7 @@ How they are applied:
 | `0001-wined3d-gpu-identity.patch` | `dlls/wined3d/directx.c`, `wined3d_private.h`, `wined3d_main.c`, `adapter_gl.c` | Games read the driver version through D3D9 (also DXGI, D3D8, DirectDraw), all from `wined3d_driver_info_init()`. Wine's newest NVIDIA version was 531.18 (`31.0.15.3118`). Deadlock logs « old driver » for it and never loads NVAPI or NGX. See below. |
 | `0002-loader-cartouche-identity-game-mode.patch` | `loader/wine_info.plist.in` | The macOS menu of every game read « Quit CrossOver-Hosted Application ». Cartouche Wine is not CrossOver. Adds the Game Mode keys. |
 | `0003-cartouche-visible-names.patch` | `dlls/ieframe/iexplore.c`, `programs/iexplore/iexplore.inf` | « CrossOver Web Browser » and « CrossOver HTML engine » were visible in prefixes. |
+| `0004-winemac-cartouche-overlay-focus.patch` | `dlls/winemac.drv/cocoa_app.m` | A fullscreen game minimized itself when Cartouche's in-game menu took the focus. See below. |
 
 ### GPU identity (0001)
 
@@ -35,6 +36,14 @@ How they are applied:
 - **Metal shader cache.** macOS keeps it under `$(getconf DARWIN_USER_CACHE_DIR)/<bundle id>/` (`com.apple.metal`, `com.apple.metalfe`, `com.apple.gpuarchiver`). With the new id, each game compiles its shaders once more on its first run. Copying the old folder to the new name keeps the cache: `cp -cR "$C/com.codeweavers.CrossOver.wineloader" "$C/dev.bryann2k.cartouche.wineloader"` with `C=$(getconf DARWIN_USER_CACHE_DIR)`, run once, only if the new folder does not exist yet. The runner has no first-run hook, so the launcher should do it. Whether Metal accepts the copied entries is not verified; if it does not, it just recompiles.
 - macOS may ask again for permissions it had granted to the old id (not verified).
 
+### In-game menu focus (0004)
+
+- Cartouche's in-game menu activates Cartouche, the only way to free a cursor the game captured. A fullscreen game read that as the user switching away and minimized itself, like Unity games do on `WM_ACTIVATEAPP(FALSE)`.
+- Cartouche posts `dev.bryann2k.cartouche.overlay.willOpen` and `.didClose` as distributed notifications, with the game's pid as the object. Only that game's driver listens.
+- On willOpen the driver does what CodeWeavers' code already does for a macOS permission dialog (`WineWillShowPermissionDialogNotification`): it ignores the resign and stops clipping the cursor.
+- On didClose the game activates itself, again 250 ms later, and after 700 ms it clips the cursor again and passes on a focus loss that is still there. macOS accepts self-activation, where it refuses Cartouche's request or hands the front to another app as Cartouche hides.
+- Measured with a fullscreen probe that minimizes on focus loss: 20 menu cycles, 0 minimizes. Another app took the front 6 times; the game had it back within 100 ms each time. The bench is in the app repository, `docs/research/release-0.2.0-beta2/overlay-window/`.
+
 Upstream behavior that Cartouche relies on lives in CodeWeavers' sources, not here. One example: CodeWeavers' Rosetta 2 workarounds for the 32-bit syscall thunk (marked "CW HACK" in their sources). `crossover-sources-26.3.0.tar.gz` (the pinned SHA-256) carries `CW HACK 20760` in `sources/wine/dlls/wow64cpu/cpu.c`: under Rosetta 2 the 32-to-64 syscall thunk returns with `lretq`, which avoids a SIGUSR1 race ([WineHQ bug 60494](https://bugs.winehq.org/show_bug.cgi?id=60494)).
 
 ## Build configuration
@@ -50,7 +59,7 @@ Upstream behavior that Cartouche relies on lives in CodeWeavers' sources, not he
 | `--with-coreaudio` | Audio output on macOS. |
 | `--with-freetype` | Font rendering. Library bundled. |
 | `--with-gnutls` | TLS for Wine's secure channel (`schannel`). Library bundled. |
-| `--with-gstreamer` | Builds `winegstreamer`, which plays games' videos and audio through Media Foundation, DirectShow and the WM ASF reader. GStreamer is built from CodeWeavers' tarball and bundled (see [GStreamer](#gstreamer-from-2630-3)). Since 26.3.0-3. |
+| `--with-gstreamer` | Builds `winegstreamer`, which plays games' videos and audio through Media Foundation, DirectShow and the WM ASF reader. GStreamer is built from CodeWeavers' tarball and bundled (see [GStreamer](#gstreamer-from-2631)). Since 26.3.1. |
 | `--with-opencl` | OpenCL through Apple's framework. <!-- TODO verify: the commit history does not state the reason --> |
 | `--with-sdl` | Game controllers through SDL (`winebus`). Libraries bundled. |
 | `--with-vulkan` | Vulkan through MoltenVK (bundled). |
@@ -68,7 +77,7 @@ Three groups:
 - **Optional libraries** that Cartouche does not ship, so the archive stays self-contained: fontconfig, gphoto, GSSAPI, Kerberos, netapi, pcap, SANE, libusb and CAPI. <!-- TODO verify: the exact reason per flag is not in the commit messages -->
 - **`--without-ffmpeg`**: Wine's own FFmpeg backend (`winedmo`) is not built. Video goes through `winegstreamer`, and the only FFmpeg in the package is the decoders-only one under gst-libav.
 
-Up to 26.3.0-2 the recipe also passed `--without-gstreamer`. 26.3.0-3 replaces it with `--with-gstreamer` and `--without-ffmpeg`.
+Up to 26.3.0-2 the recipe also passed `--without-gstreamer`. 26.3.1 replaces it with `--with-gstreamer` and `--without-ffmpeg`.
 
 `GSTREAMER_CFLAGS` and `GSTREAMER_LIBS` are set by `build.sh` from the bundled GStreamer, through unversioned links to the bundled copies, so `winegstreamer.so` records their `@rpath` names. `build.sh` fails if `winegstreamer.so` was not built, because `configure` skips it quietly when GStreamer does not link.
 
@@ -94,9 +103,9 @@ Copied by `bundle-deps.sh`. It follows each dylib's load commands, copies every 
 | MoltenVK | Vulkan on Metal. |
 | SDL2 (Homebrew `sdl2` is sdl2-compat) | The SDL2 API Wine's controller backend uses. |
 | SDL3 | sdl2-compat opens `libSDL3.dylib` with `dlopen`. Added in 26.3.0-2. |
-| GStreamer 1.24.4 libraries, 21 plugins and `gst-inspect-1.0` | `winegstreamer`. Built from CodeWeavers' tarball, not from Homebrew. Added in 26.3.0-3. |
-| FFmpeg 6.1.6 (`libavcodec`, `libavformat`, `libavutil`, `libavfilter`, `libswresample`, `libswscale`) | The decoders under gst-libav. LGPL, decoders and parsers only. Added in 26.3.0-3. |
-| GLib (Homebrew `glib`, with gettext's `libintl` and `pcre2`) | GStreamer is built on GLib. Added in 26.3.0-3. |
+| GStreamer 1.24.4 libraries, 21 plugins and `gst-inspect-1.0` | `winegstreamer`. Built from CodeWeavers' tarball, not from Homebrew. Added in 26.3.1. |
+| FFmpeg 6.1.6 (`libavcodec`, `libavformat`, `libavutil`, `libavfilter`, `libswresample`, `libswscale`) | The decoders under gst-libav. LGPL, decoders and parsers only. Added in 26.3.1. |
+| GLib (Homebrew `glib`, with gettext's `libintl` and `pcre2`) | GStreamer is built on GLib. Added in 26.3.1. |
 | Their dependencies | Whatever the load commands show. Listed in `share/licenses/dylibs.txt`. |
 
 Plugins go to `lib/gstreamer-1.0` with the `LC_RPATH` `@loader_path/..`, and `gst-inspect-1.0` to `libexec/gstreamer-1.0` with `@executable_path/../../lib` (`bundle-deps.sh --place`). Every absolute `LC_RPATH` that meson leaves is removed.
@@ -112,7 +121,7 @@ The build does not use anything from Homebrew at run time. `check-deps.sh` fails
 
 Wine looks in these folders before it offers a download. A new prefix then never shows the download prompt, and `boot-check.sh` fails if wineboot does not use the bundled Mono.
 
-## GStreamer (from 26.3.0-3)
+## GStreamer (from 26.3.1)
 
 ### Where it comes from
 
@@ -181,7 +190,7 @@ There is no `bin/wine` wrapper script. The manifest's `loader` is `bin/wine`, th
 | `fetch.sh` | A pinned download that changed. |
 | `check-deps.sh` | Load commands and rpaths that point outside macOS and the package. |
 | `check_dlopen.py` | Libraries named in the binaries' strings that are neither bundled nor in macOS. `dlopen-allow.txt` lists the exceptions with a reason. |
-| `check-gstreamer.sh` | `winegstreamer.so` or a listed plugin missing. It runs the bundled `gst-inspect-1.0` under `env -i` with only a scratch registry and requires: no blacklisted plugin, every plugin loaded from inside the package, every plugin licensed LGPL (`mpegpsdemux` reports `unknown` because it is MPL-1.1/LGPL dual-licensed; it is the one exception), and the elements Wine creates plus the `avdec_*` decoders, demuxers and parsers games need. Runs in `build.sh` and `verify.sh`. Since 26.3.0-3. |
+| `check-gstreamer.sh` | `winegstreamer.so` or a listed plugin missing. It runs the bundled `gst-inspect-1.0` under `env -i` with only a scratch registry and requires: no blacklisted plugin, every plugin loaded from inside the package, every plugin licensed LGPL (`mpegpsdemux` reports `unknown` because it is MPL-1.1/LGPL dual-licensed; it is the one exception), and the elements Wine creates plus the `avdec_*` decoders, demuxers and parsers games need. Runs in `build.sh` and `verify.sh`. Since 26.3.1. |
 | `check-sdl.sh` | SDL3 missing at run time. It compiles `check-sdl.c` for x86_64, loads the bundled `libSDL2-2.0.0.dylib` and calls `SDL_Init` for game controllers, which makes sdl2-compat load SDL3. |
 | `check-licenses.sh` | A bundled dylib, GStreamer plugin or tool, Mono or Gecko without its license. |
 | `verify.sh` | An archive that does not match its checksum, is missing files, or whose `wine --version` fails. |
@@ -214,11 +223,13 @@ The display name is **Cartouche Wine**. The id, tag and file names stay `wine-cr
 
 ## Changelog
 
-### 26.3.0-3 (not released)
+### 26.3.1 (not released)
 
-Branch `wine-crossover-26.3.0-3`. Not published, and not offered by the app.
+The first build with Cartouche Wine's own version number (`CARTOUCHE_WINE_VERSION` in `pins.env`), still on the CrossOver 26.3.0 sources. Planned as 26.3.0-3 until 2026-11-04. Not published, and not offered by the app yet.
 
-**GStreamer for media playback.** Builds 26.3.0-1 and -2 were configured `--without-gstreamer`, so `winegstreamer` was missing and games could not play their videos through Media Foundation, DirectShow or the WM ASF reader (H.264/AAC MP4, WMV/WMA, MPEG). 26.3.0-3 builds Wine `--with-gstreamer` on a bundled, LGPL-only GStreamer. Details are in [GStreamer](#gstreamer-from-2630-3). (c23affa, dc0a873)
+**Source patches 0001 to 0004.** GPU identity, the « Cartouche Wine » name in the macOS menu bar and Game Mode keys, Cartouche names in prefixes, and the in-game menu no longer minimizes a fullscreen game. Details in [Source patches](#source-patches).
+
+**GStreamer for media playback.** Builds 26.3.0-1 and -2 were configured `--without-gstreamer`, so `winegstreamer` was missing and games could not play their videos through Media Foundation, DirectShow or the WM ASF reader (H.264/AAC MP4, WMV/WMA, MPEG). 26.3.1 builds Wine `--with-gstreamer` on a bundled, LGPL-only GStreamer. Details are in [GStreamer](#gstreamer-from-2631). (c23affa, dc0a873)
 
 - **GStreamer 1.24.4** from `sources/gstreamer` in CodeWeavers' tarball, so its source offer is the tarball every release already carries. Core, base, good, bad, ugly and gst-libav, each built alone with meson, all optional features off, `-Dgpl=disabled`, no downloads.
 - **FFmpeg 6.1.6**, LGPL 2.1+, decoders and parsers only, shared, for gst-libav. Pinned by URL and SHA-256, signature checked. Its tarball is attached to the release.
