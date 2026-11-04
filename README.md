@@ -20,7 +20,7 @@ with the libraries needed by the Cartouche launcher bundled alongside it.
 
 Cartouche Wine is the Windows compatibility runtime used by **Cartouche**, a macOS game launcher. This repository contains the recipes, checks and workflows that build that runtime. It does not contain the launcher or a copy of the Wine source tree.
 
-The recipe downloads CodeWeavers’ published CrossOver source archive, verifies its checksum and builds Wine **without adding Wine source patches**. It packages the result with its dependencies so users do not need Homebrew.
+The recipe downloads CodeWeavers’ published CrossOver source archive, verifies its checksum and builds Wine with a few documented source patches (from 26.3.0-3: GPU identity, the loader's name, the browser's name; see [CHANGES.md](docs/CHANGES.md#source-patches)). It packages the result with its dependencies so users do not need Homebrew.
 
 | Project | Its role |
 | --- | --- |

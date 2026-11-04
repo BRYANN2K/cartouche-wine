@@ -133,6 +133,9 @@ class WineCrossOverScripts(unittest.TestCase):
         self.assertIn("GST_REGISTRY_1_0", offer)
         info = run("tar", "-xJOf", asset, "wine-crossover-26.3.0-3/BUILDINFO.txt", check=True).stdout
         self.assertIn("gstreamer=1.24.4", info)
+        for name, digest in series():
+            self.assertIn(f"  - {name} (SHA-256 {digest})", offer)
+            self.assertIn(f"patch: {name} {digest}", info)
         self.assertIn("ffmpeg=6.1.6", info)
 
         entry = json.loads((out / "manifest-entry.json").read_text())
@@ -257,6 +260,94 @@ class WineCrossOverScripts(unittest.TestCase):
         self.assertIn("install/share/wine/mono", r.stdout)
         self.assertIn("install/share/wine/gecko", r.stdout)
         self.assertIn("check-deps.sh", r.stdout)
+        # The patches apply in series order, after unpacking and before configure
+        lines = r.stdout.splitlines()
+        applied = [line.rsplit("/", 1)[1] for line in lines if line.startswith("+ patch ") and "--dry-run" not in line]
+        self.assertEqual(applied, [name for name, _ in series()])
+        unpack = next(i for i, line in enumerate(lines) if "crossover-sources-26.3.0.tar.gz" in line)
+        first = next(i for i, line in enumerate(lines) if line.startswith("+ patch "))
+        self.assertLess(unpack, first)
+        self.assertLess(first, lines.index(configure))
+
+    # A copy of the scripts whose patches/ the test may change
+    def scripts_copy(self):
+        copy = self.work / "scripts"
+        shutil.copytree(SCRIPTS, copy, ignore=shutil.ignore_patterns("__pycache__"))
+        return copy
+
+    def test_build_refuses_a_patch_that_does_not_match_its_series_hash(self):
+        copy = self.scripts_copy()
+        name = series()[0][0]
+        with open(copy / "patches" / name, "a") as f:
+            f.write("\n")
+        r = run("sh", copy / "build.sh", "--dry-run", self.work / "dry")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(f"patches/{name} does not match its SHA-256", r.stderr)
+        self.assertNotIn("+ patch ", r.stdout)
+
+    def test_build_refuses_a_patch_missing_from_the_series(self):
+        copy = self.scripts_copy()
+        write(copy / "patches" / "9999-extra.patch", "--- a/x\n+++ b/x\n")
+        r = run("sh", copy / "build.sh", "--dry-run", self.work / "dry")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("9999-extra.patch is not listed in patches/series", r.stderr)
+
+    def test_ccache_and_jobs_reach_configure_and_make(self):
+        bin_dir = self.work / "bin"
+        write(bin_dir / "ccache", "#!/bin/sh\nexec \"$@\"\n", 0o755)
+        env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", JOBS="3")
+        r = run("sh", SCRIPTS / "build.sh", "--dry-run", self.work / "dry", env=env)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        configure = next(line for line in r.stdout.splitlines() if "sources/wine/configure" in line)
+        for var in ("CC=ccache clang", "x86_64_CC=ccache x86_64-w64-mingw32-clang",
+                    "i386_CC=ccache i686-w64-mingw32-clang"):
+            self.assertIn(var, configure)
+        self.assertIn("+ make -j3", r.stdout)
+        r = run("sh", SCRIPTS / "build.sh", "--dry-run", self.work / "dry", env=dict(env, CCACHE="0"))
+        self.assertNotIn("ccache", r.stdout)
+
+
+def series():
+    """(file, SHA-256) of each patch in patches/series, in order."""
+    return [tuple(reversed(line.split())) for line in (SCRIPTS / "patches/series").read_text().splitlines()
+            if line.strip() and not line.startswith("#")]
+
+
+class Patches(unittest.TestCase):
+
+    def test_series_lists_every_patch_with_its_hash(self):
+        listed = series()
+        self.assertEqual(sorted(name for name, _ in listed),
+                         sorted(p.name for p in (SCRIPTS / "patches").glob("*.patch")))
+        for name, digest in listed:
+            self.assertEqual(sha256(SCRIPTS / "patches" / name), digest, name)
+
+    def test_modified_files_carry_a_cartouche_notice(self):
+        # LGPL 2.1 section 2(b): a modified file states that it was changed, and when
+        for name, _ in series():
+            text = (SCRIPTS / "patches" / name).read_text()
+            files = [line[6:] for line in text.splitlines() if line.startswith("+++ b/")]
+            self.assertTrue(files, name)
+            for f in files:
+                section = text.split(f"+++ b/{f}\n", 1)[1].split("\n--- a/", 1)[0]
+                self.assertRegex(section, r"\+.*Modified by Cartouche Wine on \d{4}-\d{2}-\d{2}: ", f"{name}: {f}")
+
+    @unittest.skipUnless((ROOT / "work/downloads/crossover-sources-26.3.0.tar.gz").is_file(),
+                         "needs the pinned source tarball in work/downloads (fetch.sh)")
+    def test_patches_apply_to_the_pinned_sources_without_fuzz(self):
+        tarball = ROOT / "work/downloads/crossover-sources-26.3.0.tar.gz"
+        pins = (SCRIPTS / "pins.env").read_text()
+        self.assertIn(f"CX_SOURCE_SHA256={sha256(tarball)}", pins)
+        files = sorted({line[6:] for name, _ in series()
+                        for line in (SCRIPTS / "patches" / name).read_text().splitlines()
+                        if line.startswith("+++ b/")})
+        with tempfile.TemporaryDirectory() as tmp:
+            run("tar", "-xzf", tarball, "-C", tmp, *[f"sources/wine/{f}" for f in files], check=True)
+            for name, _ in series():
+                r = run("patch", "-p1", "-F", "0", "-s", "-d", f"{tmp}/sources/wine",
+                        "-i", SCRIPTS / "patches" / name)
+                self.assertEqual(r.returncode, 0, f"{name}: {r.stdout}{r.stderr}")
+            self.assertEqual(list(pathlib.Path(tmp).rglob("*.rej")), [])
 
 
 def listed_plugins():

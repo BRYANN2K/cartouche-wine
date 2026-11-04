@@ -1,0 +1,245 @@
+From: Cartouche Wine
+Subject: [PATCH] wined3d: Recent NVIDIA driver version, RTX 50 cards and a
+ VideoDriverVersion setting.
+
+Applies to sources/wine of crossover-sources-26.3.0.tar.gz (SHA-256
+ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872, Wine 11.0).
+
+Games read the display driver version through the D3D9 adapter identifier
+(and DXGI's CheckInterfaceSupport, D3D8, DirectDraw), all fed by
+wined3d_driver_info_init(). Its newest NVIDIA entry is 531.18
+(31.0.15.3118), and Source 2 games such as Deadlock log "old driver" for it.
+
+- DRIVER_NVIDIA_TURING: NVIDIA 581.57 (Game Ready, 2025-10-14), whose
+  Windows version is 32.0.15.8157 (the last digit of the third word and the
+  fourth word give the public number). Used by the Turing and newer entries
+  (GTX 16, RTX 20 to 50, Tesla T4, A10). Older cards keep 531.18.
+- RTX 50 cards, device IDs from the PCI ID database
+  (https://pci-ids.ucw.cz/read/PC/10de, pci.ids version 2026.10.30):
+  2b85 GB202 [GeForce RTX 5090], 2c02 GB203 [GeForce RTX 5080],
+  2c05 GB203 [GeForce RTX 5070 Ti], 2f04 GB205 [GeForce RTX 5070].
+  Memory is the smallest board's: 32, 16, 16 and 12 GB.
+- VideoDriverVersion, a string a.b.c.d read like VideoPciDeviceID (registry
+  HKCU\Software\Wine\Direct3D, the per-application key, or WINE_D3D_CONFIG),
+  replaces the reported version for any vendor, e.g. 32.0.15.8157.
+
+---
+--- a/dlls/wined3d/wined3d_private.h
++++ b/dlls/wined3d/wined3d_private.h
+@@ -6,6 +6,8 @@
+  * Copyright 2002-2003, 2004 Jason Edmeades
+  * Copyright 2005 Oliver Stieber
+  * Copyright 2006-2011, 2013 Stefan Dösinger for CodeWeavers
++ *
++ * Modified by Cartouche Wine on 2026-10-30: RTX 50 device IDs, DRIVER_NVIDIA_TURING, driver version settings.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -475,6 +477,9 @@
+     unsigned int max_gl_version;
+     unsigned short pci_vendor_id;
+     unsigned short pci_device_id;
++    /* Reported display driver version, 0 for the driver table's. */
++    unsigned int driver_version_high;
++    unsigned int driver_version_low;
+     /* Memory tracking and object counting. */
+     UINT64 emulated_textureram;
+     char *logo;
+@@ -2346,6 +2351,10 @@
+     CARD_NVIDIA_GEFORCE_RTX4080     = 0x2704,
+     CARD_NVIDIA_GEFORCE_RTX4080SUPER = 0x2702,
+     CARD_NVIDIA_GEFORCE_RTX4090     = 0x2684,
++    CARD_NVIDIA_GEFORCE_RTX5070     = 0x2f04,
++    CARD_NVIDIA_GEFORCE_RTX5070TI   = 0x2c05,
++    CARD_NVIDIA_GEFORCE_RTX5080     = 0x2c02,
++    CARD_NVIDIA_GEFORCE_RTX5090     = 0x2b85,
+ 
+     CARD_REDHAT_VIRGL               = 0x1010,
+ 
+@@ -2455,6 +2464,7 @@
+     DRIVER_NVIDIA_GEFORCE8,
+     DRIVER_NVIDIA_FERMI,
+     DRIVER_NVIDIA_KEPLER,
++    DRIVER_NVIDIA_TURING,
+     DRIVER_REDHAT_VIRGL,
+     DRIVER_VMWARE,
+     DRIVER_WINE,
+--- a/dlls/wined3d/directx.c
++++ b/dlls/wined3d/directx.c
+@@ -6,6 +6,8 @@
+  * Copyright 2007-2008 Stefan Dösinger for CodeWeavers
+  * Copyright 2009-2011 Henri Verbeet for CodeWeavers
+  *
++ * Modified by Cartouche Wine on 2026-10-30: NVIDIA 581.57 driver entry for Turing and newer cards, RTX 50 cards, VideoDriverVersion override.
++ *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+  * License as published by the Free Software Foundation; either
+@@ -319,6 +321,7 @@
+     {DRIVER_NVIDIA_GEFORCE8,    DRIVER_MODEL_NT6X,  "nvd3dum.dll",     13, 4052},
+     {DRIVER_NVIDIA_FERMI,       DRIVER_MODEL_NT6X,  "nvd3dum.dll",     13, 9135},
+     {DRIVER_NVIDIA_KEPLER,      DRIVER_MODEL_NT6X,  "nvd3dum.dll",     15, 3118}, /* 531.18 */
++    {DRIVER_NVIDIA_TURING,      DRIVER_MODEL_NT6X,  "nvd3dum.dll",     15, 8157}, /* 581.57 */
+ 
+     /* Red Hat */
+     {DRIVER_REDHAT_VIRGL,       DRIVER_MODEL_GENERIC, "virgl.dll",      0,    0},
+@@ -472,43 +475,47 @@
+     {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1080TI,  "NVIDIA GeForce GTX 1080 Ti",       DRIVER_NVIDIA_KEPLER,  11264},
+     {HW_VENDOR_NVIDIA,     CARD_NVIDIA_TITANX_PASCAL,      "NVIDIA TITAN X (Pascal)",          DRIVER_NVIDIA_KEPLER,  12288},
+     {HW_VENDOR_NVIDIA,     CARD_NVIDIA_TITANV,             "NVIDIA TITAN V",                   DRIVER_NVIDIA_KEPLER,  12288},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1650     ,"NVIDIA GeForce GTX 1650"      ,   DRIVER_NVIDIA_KEPLER,  4096},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1650SUPER,"NVIDIA GeForce GTX 1650 SUPER",   DRIVER_NVIDIA_KEPLER,  4096},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1660SUPER,"NVIDIA GeForce GTX 1660 SUPER",   DRIVER_NVIDIA_KEPLER,  6144},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1660TI,  "NVIDIA GeForce GTX 1660 Ti",       DRIVER_NVIDIA_KEPLER,  6144},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX2060,    "NVIDIA GeForce RTX 2060",          DRIVER_NVIDIA_KEPLER,  6144},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX2070,    "NVIDIA GeForce RTX 2070",          DRIVER_NVIDIA_KEPLER,  8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX2080,    "NVIDIA GeForce RTX 2080",          DRIVER_NVIDIA_KEPLER,  8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX2080TI,  "NVIDIA GeForce RTX 2080 Ti",       DRIVER_NVIDIA_KEPLER,  11264},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3050,    "NVIDIA GeForce RTX 3050",          DRIVER_NVIDIA_KEPLER,  6144},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060,    "NVIDIA GeForce RTX 3060",          DRIVER_NVIDIA_KEPLER,  8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060_LHR, "NVIDIA GeForce RTX 3060 (Low Hash Rate)", DRIVER_NVIDIA_KEPLER, 8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060TI_GA103, "NVIDIA GeForce RTX 3060 Ti (GA103)", DRIVER_NVIDIA_KEPLER, 8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060TI_GA104, "NVIDIA GeForce RTX 3060 Ti (GA104)", DRIVER_NVIDIA_KEPLER, 8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060TI_GA104_LHR, "NVIDIA GeForce RTX 3060 Ti (GA104, Low Hash Rate)", DRIVER_NVIDIA_KEPLER, 8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3070,    "NVIDIA GeForce RTX 3070",          DRIVER_NVIDIA_KEPLER,  8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3070_LHR, "NVIDIA GeForce RTX 3070 (Low Hash Rate)", DRIVER_NVIDIA_KEPLER, 8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3070_MOBILE, "NVIDIA GeForce RTX 3070 (mobile)", DRIVER_NVIDIA_KEPLER, 8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3070TI,  "NVIDIA GeForce RTX 3070 Ti",       DRIVER_NVIDIA_KEPLER,  8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3080_10GB, "NVIDIA GeForce RTX 3080 10GB",   DRIVER_NVIDIA_KEPLER,  10240},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3080_10GB_LHR, "NVIDIA GeForce RTX 3080 10GB (Low Hash Rate)", DRIVER_NVIDIA_KEPLER, 10240},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3080_12GB, "NVIDIA GeForce RTX 3080 12GB",   DRIVER_NVIDIA_KEPLER,  10240},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3080TI,  "NVIDIA GeForce RTX 3080 Ti",       DRIVER_NVIDIA_KEPLER,  12288},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3090,    "NVIDIA GeForce RTX 3090",          DRIVER_NVIDIA_KEPLER,  24576},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3090TI,  "NVIDIA GeForce RTX 3090 Ti",       DRIVER_NVIDIA_KEPLER,  24576},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_TESLA_T4,           "NVIDIA Tesla T4",                  DRIVER_NVIDIA_KEPLER,  16384},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_AMPERE_A10,         "NVIDIA Ampere A10",                DRIVER_NVIDIA_KEPLER,  24576},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4060,    "NVIDIA GeForce RTX 4060",          DRIVER_NVIDIA_KEPLER,  8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4060M,   "NVIDIA GeForce RTX 4060M",         DRIVER_NVIDIA_KEPLER,  8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4060TI8G, "NVIDIA GeForce RTX 4060 Ti 8GB",  DRIVER_NVIDIA_KEPLER,  8192},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4060TI16G, "NVIDIA GeForce RTX 4060 Ti 16GB", DRIVER_NVIDIA_KEPLER, 16384},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4070,    "NVIDIA GeForce RTX 4070",          DRIVER_NVIDIA_KEPLER,  12288},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4070SUPER, "NVIDIA GeForce RTX 4070 SUPER",  DRIVER_NVIDIA_KEPLER,  12288},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4070TI,  "NVIDIA GeForce RTX 4070 Ti",       DRIVER_NVIDIA_KEPLER,  12288},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4070TISUPER, "NVIDIA GeForce RTX 4070 Ti SUPER", DRIVER_NVIDIA_KEPLER, 16384},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4080,    "NVIDIA GeForce RTX 4080",          DRIVER_NVIDIA_KEPLER,  16384},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4080SUPER, "NVIDIA GeForce RTX 4080 SUPER",  DRIVER_NVIDIA_KEPLER,  16384},
+-    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4090,    "NVIDIA GeForce RTX 4090",          DRIVER_NVIDIA_KEPLER,  24576},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1650     ,"NVIDIA GeForce GTX 1650"      ,   DRIVER_NVIDIA_TURING,  4096},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1650SUPER,"NVIDIA GeForce GTX 1650 SUPER",   DRIVER_NVIDIA_TURING,  4096},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1660SUPER,"NVIDIA GeForce GTX 1660 SUPER",   DRIVER_NVIDIA_TURING,  6144},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_GTX1660TI,  "NVIDIA GeForce GTX 1660 Ti",       DRIVER_NVIDIA_TURING,  6144},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX2060,    "NVIDIA GeForce RTX 2060",          DRIVER_NVIDIA_TURING,  6144},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX2070,    "NVIDIA GeForce RTX 2070",          DRIVER_NVIDIA_TURING,  8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX2080,    "NVIDIA GeForce RTX 2080",          DRIVER_NVIDIA_TURING,  8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX2080TI,  "NVIDIA GeForce RTX 2080 Ti",       DRIVER_NVIDIA_TURING,  11264},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3050,    "NVIDIA GeForce RTX 3050",          DRIVER_NVIDIA_TURING,  6144},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060,    "NVIDIA GeForce RTX 3060",          DRIVER_NVIDIA_TURING,  8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060_LHR, "NVIDIA GeForce RTX 3060 (Low Hash Rate)", DRIVER_NVIDIA_TURING, 8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060TI_GA103, "NVIDIA GeForce RTX 3060 Ti (GA103)", DRIVER_NVIDIA_TURING, 8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060TI_GA104, "NVIDIA GeForce RTX 3060 Ti (GA104)", DRIVER_NVIDIA_TURING, 8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3060TI_GA104_LHR, "NVIDIA GeForce RTX 3060 Ti (GA104, Low Hash Rate)", DRIVER_NVIDIA_TURING, 8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3070,    "NVIDIA GeForce RTX 3070",          DRIVER_NVIDIA_TURING,  8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3070_LHR, "NVIDIA GeForce RTX 3070 (Low Hash Rate)", DRIVER_NVIDIA_TURING, 8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3070_MOBILE, "NVIDIA GeForce RTX 3070 (mobile)", DRIVER_NVIDIA_TURING, 8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3070TI,  "NVIDIA GeForce RTX 3070 Ti",       DRIVER_NVIDIA_TURING,  8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3080_10GB, "NVIDIA GeForce RTX 3080 10GB",   DRIVER_NVIDIA_TURING,  10240},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3080_10GB_LHR, "NVIDIA GeForce RTX 3080 10GB (Low Hash Rate)", DRIVER_NVIDIA_TURING, 10240},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3080_12GB, "NVIDIA GeForce RTX 3080 12GB",   DRIVER_NVIDIA_TURING,  10240},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3080TI,  "NVIDIA GeForce RTX 3080 Ti",       DRIVER_NVIDIA_TURING,  12288},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3090,    "NVIDIA GeForce RTX 3090",          DRIVER_NVIDIA_TURING,  24576},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX3090TI,  "NVIDIA GeForce RTX 3090 Ti",       DRIVER_NVIDIA_TURING,  24576},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_TESLA_T4,           "NVIDIA Tesla T4",                  DRIVER_NVIDIA_TURING,  16384},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_AMPERE_A10,         "NVIDIA Ampere A10",                DRIVER_NVIDIA_TURING,  24576},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4060,    "NVIDIA GeForce RTX 4060",          DRIVER_NVIDIA_TURING,  8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4060M,   "NVIDIA GeForce RTX 4060M",         DRIVER_NVIDIA_TURING,  8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4060TI8G, "NVIDIA GeForce RTX 4060 Ti 8GB",  DRIVER_NVIDIA_TURING,  8192},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4060TI16G, "NVIDIA GeForce RTX 4060 Ti 16GB", DRIVER_NVIDIA_TURING, 16384},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4070,    "NVIDIA GeForce RTX 4070",          DRIVER_NVIDIA_TURING,  12288},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4070SUPER, "NVIDIA GeForce RTX 4070 SUPER",  DRIVER_NVIDIA_TURING,  12288},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4070TI,  "NVIDIA GeForce RTX 4070 Ti",       DRIVER_NVIDIA_TURING,  12288},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4070TISUPER, "NVIDIA GeForce RTX 4070 Ti SUPER", DRIVER_NVIDIA_TURING, 16384},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4080,    "NVIDIA GeForce RTX 4080",          DRIVER_NVIDIA_TURING,  16384},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4080SUPER, "NVIDIA GeForce RTX 4080 SUPER",  DRIVER_NVIDIA_TURING,  16384},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX4090,    "NVIDIA GeForce RTX 4090",          DRIVER_NVIDIA_TURING,  24576},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX5070,    "NVIDIA GeForce RTX 5070",          DRIVER_NVIDIA_TURING,  12288},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX5070TI,  "NVIDIA GeForce RTX 5070 Ti",       DRIVER_NVIDIA_TURING,  16384},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX5080,    "NVIDIA GeForce RTX 5080",          DRIVER_NVIDIA_TURING,  16384},
++    {HW_VENDOR_NVIDIA,     CARD_NVIDIA_GEFORCE_RTX5090,    "NVIDIA GeForce RTX 5090",          DRIVER_NVIDIA_TURING,  32768},
+ 
+     /* AMD cards */
+     {HW_VENDOR_AMD,        CARD_AMD_RAGE_128PRO,           "ATI Rage Fury",                    DRIVER_AMD_RAGE_128PRO,  16  },
+@@ -921,6 +928,15 @@
+         driver_info->name = version_info->driver_name;
+         driver_info->version_high = MAKEDWORD_VERSION(driver_os_version, driver_feature_level);
+         driver_info->version_low = MAKEDWORD_VERSION(version_info->subversion, version_info->build);
++
++        if (wined3d_settings.driver_version_high || wined3d_settings.driver_version_low)
++        {
++            driver_info->version_high = wined3d_settings.driver_version_high;
++            driver_info->version_low = wined3d_settings.driver_version_low;
++            TRACE("Overriding driver version with %u.%u.%u.%u.\n",
++                    HIWORD(driver_info->version_high), LOWORD(driver_info->version_high),
++                    HIWORD(driver_info->version_low), LOWORD(driver_info->version_low));
++        }
+ 
+         return true;
+     }
+--- a/dlls/wined3d/adapter_gl.c
++++ b/dlls/wined3d/adapter_gl.c
+@@ -6,6 +6,8 @@
+  * Copyright 2007-2008 Stefan Dösinger for CodeWeavers
+  * Copyright 2009-2011, 2018 Henri Verbeet for CodeWeavers
+  *
++ * Modified by Cartouche Wine on 2026-10-30: RTX 50 renderer strings.
++ *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+  * License as published by the Free Software Foundation; either
+@@ -1314,6 +1316,10 @@
+ cards_nvidia_binary[] =
+ {
+     /* Direct 3D 11 */
++    {"RTX 5090",                    CARD_NVIDIA_GEFORCE_RTX5090},
++    {"RTX 5080",                    CARD_NVIDIA_GEFORCE_RTX5080},
++    {"RTX 5070 Ti",                 CARD_NVIDIA_GEFORCE_RTX5070TI},
++    {"RTX 5070",                    CARD_NVIDIA_GEFORCE_RTX5070},
+     {"RTX 4090",                    CARD_NVIDIA_GEFORCE_RTX4090},
+     {"RTX 4080 SUPER",              CARD_NVIDIA_GEFORCE_RTX4080SUPER},
+     {"RTX 4080",                    CARD_NVIDIA_GEFORCE_RTX4080},
+--- a/dlls/wined3d/wined3d_main.c
++++ b/dlls/wined3d/wined3d_main.c
+@@ -6,6 +6,8 @@
+  * Copyright 2004      Jason Edmeades
+  * Copyright 2007-2008 Stefan Dösinger for CodeWeavers
+  * Copyright 2009 Henri Verbeet for CodeWeavers
++ *
++ * Modified by Cartouche Wine on 2026-10-30: VideoDriverVersion setting.
+  *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+@@ -405,6 +407,25 @@
+                 wined3d_settings.pci_vendor_id = pci_vendor_id;
+             }
+         }
++        if (!get_config_key(hkey, appkey, env, "VideoDriverVersion", buffer, size))
++        {
++            unsigned int v[4];
++            char end;
++
++            /* The four words of the Windows version, e.g. 32.0.15.8157 for NVIDIA 581.57. */
++            if (sscanf(buffer, "%u.%u.%u.%u%c", &v[0], &v[1], &v[2], &v[3], &end) == 4
++                    && v[0] <= 0xffff && v[1] <= 0xffff && v[2] <= 0xffff && v[3] <= 0xffff
++                    && (v[0] | v[1] | v[2] | v[3]))
++            {
++                TRACE("Using driver version %u.%u.%u.%u\n", v[0], v[1], v[2], v[3]);
++                wined3d_settings.driver_version_high = MAKEDWORD_VERSION(v[0], v[1]);
++                wined3d_settings.driver_version_low = MAKEDWORD_VERSION(v[2], v[3]);
++            }
++            else
++            {
++                ERR("Invalid value for VideoDriverVersion. The value should be four numbers up to 65535, like 32.0.15.8157\n");
++            }
++        }
+         if (!get_config_key(hkey, appkey, env, "VideoMemorySize", buffer, size))
+         {
+             int TmpVideoMemorySize = atoi(buffer);

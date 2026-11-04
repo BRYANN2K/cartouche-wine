@@ -29,7 +29,7 @@ The LGPL requires that anyone who gets the binaries can get the source and rebui
 
 `SOURCE.md` is inside the archive and is also the release description. It names the toolchain: Xcode, llvm-mingw, the deployment target, the Homebrew formulas (versions in `BUILDINFO.txt`).
 
-We add no source patches to Wine ([CHANGES.md](CHANGES.md)). The tarball and the scripts are therefore the complete corresponding source for Wine. Wine Mono and Wine Gecko are bundled as the binary tarballs published by WineHQ. Their sources are at the tags named in `pins.env`. <!-- TODO verify: whether Mono and Gecko source needs to be attached to the release as well -->
+Up to 26.3.0-2 we added no source patches to Wine. From 26.3.0-3 the patches are in `packaging/wine-crossover/patches/`, listed with their hashes in `patches/series` and in `SOURCE.md`, and each modified file says that it was modified and when ([CHANGES.md](CHANGES.md#source-patches)). The tarball and the scripts at the commit named in `SOURCE.md` are therefore the complete corresponding source for Wine. Wine Mono and Wine Gecko are bundled as the binary tarballs published by WineHQ. Their sources are at the tags named in `pins.env`. <!-- TODO verify: whether Mono and Gecko source needs to be attached to the release as well -->
 
 ## Rebuilding
 

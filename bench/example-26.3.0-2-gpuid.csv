@@ -1,0 +1,8 @@
+runner,metric,runs,unit,min,median,max
+cartouche-wine-26.3.0-2-gpuid,prefix_boot_ms,3,ms,35126.7,35897.5,37450.3
+cartouche-wine-26.3.0-2-gpuid,exe_start_ms,3,ms,4662.6,4828.8,6371.2
+cartouche-wine-26.3.0-2-gpuid,runner_bytes,1,B,1581169055.0,1581169055.0,1581169055.0
+cartouche-wine-26.3.0-2-gpuid,runner_pe_bytes,1,B,1441251000.0,1441251000.0,1441251000.0
+cartouche-wine-26.3.0-2-gpuid,runner_dwarf_bytes,1,B,641326973.0,641326973.0,641326973.0
+cartouche-wine-26.3.0-2-gpuid,runner_dwarf_pct,1,%,40.6,40.6,40.6
+cartouche-wine-26.3.0-2-gpuid,runner_files,1,count,4794.0,4794.0,4794.0

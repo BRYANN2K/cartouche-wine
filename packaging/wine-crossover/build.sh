@@ -1,7 +1,8 @@
 #!/bin/sh
-# Builds Wine from CodeWeavers' CrossOver sources into an install tree laid out
-# like CrossOver's own (bin/, lib/wine/<arch>-unix|windows/, share/wine/), so
-# Cartouche's run script and ntdll patcher find files where they expect them.
+# Builds Wine from CodeWeavers' CrossOver sources, with the patches in patches/,
+# into an install tree laid out like CrossOver's own (bin/,
+# lib/wine/<arch>-unix|windows/, share/wine/), so Cartouche's run script and
+# ntdll patcher find files where they expect them.
 #
 #   ./build.sh <work folder>             build into <work folder>/install
 #   ./build.sh --dry-run <work folder>   print the commands only
@@ -61,6 +62,24 @@ run rm -rf "$src" "$build" "$deps" "$install" "$work/llvm-mingw" "$work/gst-link
 run mkdir -p "$src" "$build" "$deps/lib" "$install" "$work/llvm-mingw"
 run tar -xzf "$source_tar" -C "$src"
 run tar -xJf "$mingw_tar" -C "$work/llvm-mingw" --strip-components 1
+# Our own source patches, in the order of patches/series, each checked against
+# its SHA-256 there and tried before it is applied. No fuzz: a new tarball
+# fails here rather than patching the wrong lines.
+patches="$here/patches"
+for p in "$patches"/*.patch; do
+    [ -f "$p" ] || continue
+    grep -q "  ${p##*/}\$" "$patches/series" \
+        || { echo "build.sh: ${p##*/} is not listed in patches/series" >&2; exit 1; }
+done
+if [ -f "$patches/series" ]; then
+    while read -r sum name; do
+        case "$sum" in '' | '#'*) continue ;; esac
+        [ "$(shasum -a 256 "$patches/$name" 2>/dev/null | cut -d' ' -f1)" = "$sum" ] \
+            || { echo "build.sh: patches/$name does not match its SHA-256 in patches/series" >&2; exit 1; }
+        run patch -p1 -F 0 -s --dry-run -d "$src/sources/wine" -i "$patches/$name"
+        run patch -p1 -F 0 -s -d "$src/sources/wine" -i "$patches/$name"
+    done < "$patches/series"
+fi
 # The addon versions this Wine asks for are the pinned ones
 addons="$src/sources/wine/dlls/appwiz.cpl/addons.c"
 for want in "MONO_VERSION \"$WINE_MONO_VERSION\"" "GECKO_VERSION \"$WINE_GECKO_VERSION\""; do
@@ -77,8 +96,26 @@ if [ -n "$dry" ]; then brew() { echo "/usr/local/opt/$2"; }; fi
 for f in bison flex; do PATH="$(brew --prefix "$f")/bin:$PATH"; done
 export PATH
 
-# GStreamer and the LGPL FFmpeg under gst-libav, into $gst and $ffmpeg
-sh "$here/build-gstreamer.sh" ${dry:+--dry-run} "$src/sources/gstreamer" "$ffmpeg_tar" "$work"
+# GStreamer and the LGPL FFmpeg under gst-libav, into $gst and $ffmpeg. They
+# change only with their inputs, so a previous build with the same key is
+# reused (CACHE_GSTREAMER=0 rebuilds them)
+gst_key="$work/gst.key"
+gst_inputs=
+if [ -z "$dry" ]; then
+    # shellcheck disable=SC2086
+    gst_inputs=$( { cat "$here/build-gstreamer.sh" "$here/gstreamer-plugins.txt"
+        echo "$CX_SOURCE_SHA256 $FFMPEG_SHA256 $MACOSX_DEPLOYMENT_TARGET"
+        brew list --versions $BREW_BUILD_DEPS $BREW_GST_DEPS
+        xcodebuild -version 2>/dev/null; } | shasum -a 256 | cut -d' ' -f1)
+fi
+if [ -z "$dry" ] && [ "${CACHE_GSTREAMER:-1}" != 0 ] && [ -f "$gst_key" ] && [ "$(cat "$gst_key")" = "$gst_inputs" ] \
+    && [ -d "$gst/lib" ] && [ -d "$ffmpeg/lib" ] && [ -f "$work/gst-build/ffmpeg/LICENSE.md" ]; then
+    echo "==> build.sh: GStreamer and FFmpeg unchanged, reusing $gst and $ffmpeg"
+else
+    run rm -f "$gst_key"
+    sh "$here/build-gstreamer.sh" ${dry:+--dry-run} "$src/sources/gstreamer" "$ffmpeg_tar" "$work"
+    [ -n "$dry" ] || echo "$gst_inputs" > "$gst_key"
+fi
 
 # The dylibs Wine links or dlopens, copied with @rpath names before configure
 # sees them, so the names it records are the bundled ones
@@ -131,6 +168,11 @@ fi
 # lib/wine/x86_64-unix/../../ is lib/, where the bundled dylibs go
 ldflags="-L$deps/lib -Wl,-rpath,@loader_path/../../ -Wl,-headerpad_max_install_names"
 
+# ccache, when installed, for the host and both PE compilers (CCACHE=0 turns
+# it off); the build folder is emptied each time, the cache is not
+ccache=
+if [ "${CCACHE:-1}" != 0 ] && command -v ccache >/dev/null 2>&1; then ccache=1; fi
+
 cd "$build" 2>/dev/null || [ -n "$dry" ]
 run "$src/sources/wine/configure" \
     --prefix="$install" \
@@ -150,8 +192,10 @@ run "$src/sources/wine/configure" \
     --without-v4l2 --without-wayland --without-x \
     "LDFLAGS=$ldflags" \
     "GSTREAMER_CFLAGS=$gst_cflags" "GSTREAMER_LIBS=$gst_libs" \
-    "CFLAGS=-O2 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
-run make -j"$(sysctl -n hw.ncpu)"
+    "CFLAGS=-O2 -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+    ${ccache:+"CC=ccache clang" "x86_64_CC=ccache x86_64-w64-mingw32-clang" "i386_CC=ccache i686-w64-mingw32-clang"}
+# JOBS lowers the parallelism to keep the Mac usable during a local build
+run make -j"${JOBS:-$(sysctl -n hw.ncpu)}"
 run make install-lib
 # configure skips winegstreamer quietly when GStreamer does not link
 [ -n "$dry" ] || [ -f "$install/lib/wine/x86_64-unix/winegstreamer.so" ] \

@@ -26,6 +26,15 @@ tag=$name
 asset="$name-x86_64.tar.xz"
 display=$(echo "$CX_VERSION" | sed -E 's/^([0-9]+\.[0-9]+)\.0$/\1/')
 
+# Our source patches in the order build.sh applies them, with their hashes,
+# for SOURCE.md and BUILDINFO.txt
+patches=
+[ ! -f "$here/patches/series" ] || patches=$(awk '!/^#/ && NF == 2 { print $2, $1 }' "$here/patches/series")
+[ -z "$patches" ] || patches="$patches
+"
+patch_list=$(printf '%s' "$patches" | sed 's/^\([^ ]*\) \(.*\)$/  - \1 (SHA-256 \2)/')
+[ -n "$patch_list" ] || patch_list="  - none"
+
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 root="$stage/$name"
@@ -55,6 +64,9 @@ It is not CrossOver and is not made or supported by CodeWeavers.
 - Its SHA-256: $CX_SOURCE_SHA256
 - A copy of that tarball is attached to the same release as this archive:
   https://github.com/$repository/releases/tag/$tag
+- Cartouche Wine's changes to sources/wine of that tarball, applied by
+  build.sh in this order (packaging/wine-crossover/patches):
+$patch_list
 - GStreamer $GST_VERSION (LGPL; core, base, good, bad, ugly and gst-libav, only
   the LGPL plugins listed in packaging/wine-crossover/gstreamer-plugins.txt) is
   built from the sources/gstreamer folder of that same CodeWeavers tarball
@@ -85,6 +97,7 @@ EOF
     echo "llvm_mingw=$LLVM_MINGW_VERSION"
     echo "gstreamer=$GST_VERSION"
     echo "ffmpeg=$FFMPEG_VERSION"
+    printf '%s' "$patches" | sed 's/^/patch: /'
     if command -v brew >/dev/null 2>&1; then
         # shellcheck disable=SC2086
         brew list --versions $BREW_BUILD_DEPS $BREW_LINK_DEPS $BREW_GST_DEPS 2>/dev/null | sed 's/^/brew: /'

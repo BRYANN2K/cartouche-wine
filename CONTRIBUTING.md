@@ -52,6 +52,6 @@ It writes `boot.txt`, `wineboot.log` and `addons.log` into `boot-out/`. `boot.tx
 - A new check or a new bundled library needs a reason in the commit message and in [docs/CHANGES.md](docs/CHANGES.md).
 - Run `python3 -m unittest discover -s packaging/tests -p 'test_wine_crossover.py'` and `sh packaging/wine-crossover/build.sh --dry-run /tmp/wine-dry`.
 - Do not add Apple Game Porting Toolkit files. `redist-scan.sh` rejects them.
-- Do not add a Wine source patch without an issue first. Today the build has none, and that is a feature.
+- Do not add a Wine source patch without an issue first. A patch goes in `packaging/wine-crossover/patches/`, with its line in `patches/series` (`shasum -a 256`), a `Modified by Cartouche Wine on <date>: <what>` line in every file it changes, and a row in [docs/CHANGES.md](docs/CHANGES.md#source-patches). Keep patches few and small.
 
 Security problems: see [SECURITY.md](SECURITY.md).

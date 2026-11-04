@@ -1,0 +1,51 @@
+From: Cartouche Wine
+Subject: [PATCH] ieframe, iexplore: Cartouche names for the built-in browser.
+
+Applies to sources/wine of crossover-sources-26.3.0.tar.gz (SHA-256
+ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872, Wine 11.0).
+
+CodeWeavers' sources show "CrossOver Web Browser" as the title of the
+built-in browser window and "CrossOver HTML engine" in the prefix's list of
+installed programs. Cartouche Wine is not CrossOver, so both become
+"Cartouche Web Browser" and "Cartouche HTML engine". The registry key
+(Uninstall\CXHTML) keeps its name so existing prefixes stay consistent.
+
+---
+--- a/dlls/ieframe/iexplore.c
++++ b/dlls/ieframe/iexplore.c
+@@ -4,6 +4,8 @@
+  * Copyright 2006 Mike McCormack (for CodeWeavers)
+  * Copyright 2006 Jacek Caban (for CodeWeavers)
+  *
++ * Modified by Cartouche Wine on 2026-10-30: browser window title.
++ *
+  * This library is free software; you can redistribute it and/or
+  * modify it under the terms of the GNU Lesser General Public
+  * License as published by the Free Software Foundation; either
+@@ -50,8 +52,8 @@
+ #define WM_UPDATEADDRBAR    (WM_APP+1)
+ 
+ /* Windows uses "Microsoft Internet Explorer" */
+-/* CrossOver: We use "CrossOver Web Browser" */
+-static const WCHAR wszWineInternetExplorer[] = L"CrossOver Web Browser";
++/* CrossOver: We use "CrossOver Web Browser"; Cartouche Wine: "Cartouche Web Browser" */
++static const WCHAR wszWineInternetExplorer[] = L"Cartouche Web Browser";
+ 
+ static LONG obj_cnt;
+ static DWORD dde_inst;
+--- a/programs/iexplore/iexplore.inf
++++ b/programs/iexplore/iexplore.inf
+@@ -1,3 +1,4 @@
++; Modified by Cartouche Wine on 2026-10-30: uninstall entry name.
+ [version]
+ Signature="$CHICAGO$"
+ 
+@@ -40,7 +41,7 @@
+ HKLM,"Software\Microsoft\Internet Explorer","Version",,"9.11.9600.18376"
+ HKLM,"Software\Microsoft\Internet Explorer","W2kVersion",,"9.11.9600.18376"
+ HKLM,"Software\Microsoft\Internet Explorer","svcVersion",,"11.0.9600.18376"
+-HKLM,"Software\Microsoft\Windows\CurrentVersion\Uninstall\CXHTML","DisplayName",,"CrossOver HTML engine"
++HKLM,"Software\Microsoft\Windows\CurrentVersion\Uninstall\CXHTML","DisplayName",,"Cartouche HTML engine"
+ HKLM,"Software\Microsoft\Windows\CurrentVersion\Uninstall\CXHTML","UninstallString",,"iexplore -unregserver"
+ 
+ 
