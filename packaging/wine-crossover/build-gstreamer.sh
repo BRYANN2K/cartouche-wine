@@ -53,8 +53,9 @@ for d in $FFMPEG_DECODERS; do ff_flags="$ff_flags --enable-decoder=$d"; done
 for p in $FFMPEG_PARSERS; do ff_flags="$ff_flags --enable-parser=$p"; done
 
 if [ "$so" = dylib ]; then
-    # Apple's clang by its path: build.sh puts llvm-mingw first in PATH, and its clang has no macOS SDK
-    host_cc=$(xcrun -f clang 2>/dev/null || echo clang)
+    # /usr/bin/clang, Apple's shim: build.sh puts llvm-mingw first in PATH, and neither its clang nor the
+    # toolchain's clang called by path gets the macOS SDK (« ld: library 'System' not found »)
+    host_cc=/usr/bin/clang
     # Room for bundle-deps.sh to rewrite the install names
     ff_flags="$ff_flags --cc=$host_cc --arch=x86_64 --extra-ldflags=-Wl,-headerpad_max_install_names"
     [ -z "${MACOSX_DEPLOYMENT_TARGET:-}" ] \
