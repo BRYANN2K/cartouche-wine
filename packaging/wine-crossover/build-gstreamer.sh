@@ -53,8 +53,10 @@ for d in $FFMPEG_DECODERS; do ff_flags="$ff_flags --enable-decoder=$d"; done
 for p in $FFMPEG_PARSERS; do ff_flags="$ff_flags --enable-parser=$p"; done
 
 if [ "$so" = dylib ]; then
+    # Apple's clang by its path: build.sh puts llvm-mingw first in PATH, and its clang has no macOS SDK
+    host_cc=$(xcrun -f clang 2>/dev/null || echo clang)
     # Room for bundle-deps.sh to rewrite the install names
-    ff_flags="$ff_flags --cc=clang --arch=x86_64 --extra-ldflags=-Wl,-headerpad_max_install_names"
+    ff_flags="$ff_flags --cc=$host_cc --arch=x86_64 --extra-ldflags=-Wl,-headerpad_max_install_names"
     [ -z "${MACOSX_DEPLOYMENT_TARGET:-}" ] \
         || ff_flags="$ff_flags --extra-cflags=-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET"
     export LDFLAGS="${LDFLAGS:+$LDFLAGS }-Wl,-headerpad_max_install_names"
@@ -67,7 +69,6 @@ run tar -xJf "$ffmpeg_tar" -C "$build/ffmpeg" --strip-components 1
 if [ -n "$dry" ]; then
     echo "+ (cd $build/ffmpeg && ./configure $(echo $ff_flags))"
 else
-    # Not through ccache: its configure refused « ccache clang » on the Intel runner (run 41861814976)
     (cd "$build/ffmpeg" && ./configure $ff_flags)
     # The configured FFmpeg must not be GPL or nonfree
     grep -q '^#define CONFIG_GPL 0' "$build/ffmpeg/config.h" \
